@@ -13,7 +13,6 @@
 		2B73BF0A500D69263A8EBAC8 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA769E8B692D9161A9370A81 /* MenuBarController.swift */; };
 		4277C74EFCA4E0801B30817C /* SessionManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7782DF7DFC7AEF7676FA65 /* SessionManagerTests.swift */; };
 		432441B423244F620E1717C5 /* PowerSourceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8443921F24F63AC93D6424 /* PowerSourceMonitor.swift */; };
-		4ADE6728A2B395B8B8F9A4CD /* MethCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = D9BEC2AC3D29540F52517CF4 /* MethCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		4FAF0CDB9565496B38F58162 /* UntilTimePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 175E08B67D338F7BB6C90045 /* UntilTimePickerView.swift */; };
 		51DDF770CF31C341017DDCFF /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20F10F998E6E0F840B0DBD77 /* SettingsView.swift */; };
 		56267DA8B077A47F689083B7 /* ClosedLidPrivilegedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B22C537F9F991DCEB275057 /* ClosedLidPrivilegedService.swift */; };
@@ -22,12 +21,12 @@
 		71C6523466C8C6A5975D37D8 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 399CD2266FFFC59111711E23 /* AppDelegate.swift */; };
 		7C8BEF24E4529A190149E426 /* ClosedLidPrivilegedManaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B15EBB0BC9C24DE94D06AE6 /* ClosedLidPrivilegedManaging.swift */; };
 		80BBB4D018CD1A314E48AB46 /* SessionDuration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CAAB279320D53E6AA442D02 /* SessionDuration.swift */; };
-		879036E2BECCCF034AE28614 /* MethCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D9BEC2AC3D29540F52517CF4 /* MethCore.framework */; };
+		87F9575AFFD7562862655CFC /* libMethCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = FC38B24B46269C5D46DA47E0 /* libMethCore.a */; };
 		8BF0D3DE75548D71384456A0 /* Mocks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89C25C38274CFC4BBD518EF9 /* Mocks.swift */; };
+		B1F6CC3A568D23F689E6EE0C /* libMethCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = FC38B24B46269C5D46DA47E0 /* libMethCore.a */; };
 		B86ACF36408E47FBC4507C98 /* LidStateMonitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CACE8205D6E8EBDC3B511B1 /* LidStateMonitoring.swift */; };
 		B86BB2A72A58E77343D71616 /* ClosedLidControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07AD0346636289B23F4645B6 /* ClosedLidControllerTests.swift */; };
 		BD1BF41B1C0ACEEDC2BF577C /* ThermalWarningSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FDD13BC348E5ACBC7B1A6C0 /* ThermalWarningSheet.swift */; };
-		C180C4D5371E61F9BAD93FE0 /* MethCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = D9BEC2AC3D29540F52517CF4 /* MethCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		CDD2086FE57F224461B66621 /* ClosedLidController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB5D9248C0C20C95189699B3 /* ClosedLidController.swift */; };
 		D841F7266B91440C55BA3A0B /* PowerSourceMonitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD81FDEBD473F3236CF1D60 /* PowerSourceMonitoring.swift */; };
 		E04FAFC9D0DB7C7C6B1733AF /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EB56F2D4949E4CF09605BDA /* main.swift */; };
@@ -37,7 +36,6 @@
 		E6E268B86D32AFC79BF98EC1 /* PowerAssertion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F45DECEC1EDFA1C631B4F5 /* PowerAssertion.swift */; };
 		EA02363E193F84834BEDFE8F /* TestCompat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45415312BB6BD1A5D4A67606 /* TestCompat.swift */; };
 		EC47E565D87D7B2FA546A93A /* MenuBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C969499491A8CE5F2D4D2C /* MenuBarIcon.swift */; };
-		F76121D381B9EC867A75F4F8 /* MethCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D9BEC2AC3D29540F52517CF4 /* MethCore.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -56,31 +54,6 @@
 			remoteInfo = MethCore;
 		};
 /* End PBXContainerItemProxy section */
-
-/* Begin PBXCopyFilesBuildPhase section */
-		794B20F25A83A6D5E64D6E71 /* Embed Frameworks */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 10;
-			files = (
-				C180C4D5371E61F9BAD93FE0 /* MethCore.framework in Embed Frameworks */,
-			);
-			name = "Embed Frameworks";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		EC177CDB69319EEB4E997E03 /* Embed Frameworks */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 10;
-			files = (
-				4ADE6728A2B395B8B8F9A4CD /* MethCore.framework in Embed Frameworks */,
-			);
-			name = "Embed Frameworks";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		02F66685B847D64FE27006CF /* MethApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MethApp.swift; sourceTree = "<group>"; };
@@ -111,10 +84,10 @@
 		B1C969499491A8CE5F2D4D2C /* MenuBarIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarIcon.swift; sourceTree = "<group>"; };
 		BA769E8B692D9161A9370A81 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
 		C0F45DECEC1EDFA1C631B4F5 /* PowerAssertion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerAssertion.swift; sourceTree = "<group>"; };
-		D9BEC2AC3D29540F52517CF4 /* MethCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = MethCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		DB5D9248C0C20C95189699B3 /* ClosedLidController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClosedLidController.swift; sourceTree = "<group>"; };
 		DD674486B875B1DEDCEFEA86 /* Meth.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Meth.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		EE7782DF7DFC7AEF7676FA65 /* SessionManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManagerTests.swift; sourceTree = "<group>"; };
+		FC38B24B46269C5D46DA47E0 /* libMethCore.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libMethCore.a; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -122,7 +95,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				879036E2BECCCF034AE28614 /* MethCore.framework in Frameworks */,
+				87F9575AFFD7562862655CFC /* libMethCore.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -130,7 +103,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F76121D381B9EC867A75F4F8 /* MethCore.framework in Frameworks */,
+				B1F6CC3A568D23F689E6EE0C /* libMethCore.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -214,8 +187,8 @@
 		F521AB47F998CE2315D753A0 /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				FC38B24B46269C5D46DA47E0 /* libMethCore.a */,
 				DD674486B875B1DEDCEFEA86 /* Meth.app */,
-				D9BEC2AC3D29540F52517CF4 /* MethCore.framework */,
 				04382D5D4A42F49B430F07AC /* MethTests.xctest */,
 				5B77942C01CF7B4A0A27B3FC /* MethWatchdog */,
 			);
@@ -269,7 +242,6 @@
 			buildPhases = (
 				46E8BCDC32E5FAAD29C4833F /* Sources */,
 				4C4B5E5DC2AA53DBFF19193C /* Frameworks */,
-				794B20F25A83A6D5E64D6E71 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -288,6 +260,7 @@
 			buildConfigurationList = 239EE03A6EB22BD35CD5F37B /* Build configuration list for PBXNativeTarget "MethCore" */;
 			buildPhases = (
 				DB6F0B59E74B295CBB6C268F /* Sources */,
+				81A92E314FDEC6021EB5E4D2 /* Copy Swift Objective-C Interface Header */,
 			);
 			buildRules = (
 			);
@@ -297,8 +270,8 @@
 			packageProductDependencies = (
 			);
 			productName = MethCore;
-			productReference = D9BEC2AC3D29540F52517CF4 /* MethCore.framework */;
-			productType = "com.apple.product-type.framework";
+			productReference = FC38B24B46269C5D46DA47E0 /* libMethCore.a */;
+			productType = "com.apple.product-type.library.static";
 		};
 		3D61714E4C83B38A9C9377BC /* MethTests */ = {
 			isa = PBXNativeTarget;
@@ -306,7 +279,6 @@
 			buildPhases = (
 				EA0888D6005569A3E84DF803 /* Sources */,
 				05286DE3457FFED7E7E00367 /* Frameworks */,
-				EC177CDB69319EEB4E997E03 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -352,6 +324,25 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		81A92E314FDEC6021EB5E4D2 /* Copy Swift Objective-C Interface Header */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(DERIVED_SOURCES_DIR)/$(SWIFT_OBJC_INTERFACE_HEADER_NAME)",
+			);
+			name = "Copy Swift Objective-C Interface Header";
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/include/$(PRODUCT_MODULE_NAME)/$(SWIFT_OBJC_INTERFACE_HEADER_NAME)",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "ditto \"${SCRIPT_INPUT_FILE_0}\" \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		3A45AA866FC41E7548AEB0D9 /* Sources */ = {
@@ -587,6 +578,10 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.meth.app;
 				PRODUCT_NAME = Meth;
 				SDKROOT = macosx;
@@ -597,14 +592,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGNING_ALLOWED = NO;
-				CODE_SIGN_IDENTITY = "";
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
 				DEFINES_MODULE = YES;
-				DYLIB_COMPATIBILITY_VERSION = 1;
-				DYLIB_CURRENT_VERSION = 1;
-				DYLIB_INSTALL_NAME_BASE = "@rpath";
-				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -613,7 +602,6 @@
 				PRODUCT_NAME = MethCore;
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
-				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Release;
 		};
@@ -621,14 +609,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGNING_ALLOWED = NO;
-				CODE_SIGN_IDENTITY = "";
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
 				DEFINES_MODULE = YES;
-				DYLIB_COMPATIBILITY_VERSION = 1;
-				DYLIB_CURRENT_VERSION = 1;
-				DYLIB_INSTALL_NAME_BASE = "@rpath";
-				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -637,7 +619,6 @@
 				PRODUCT_NAME = MethCore;
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
-				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Debug;
 		};
@@ -651,6 +632,10 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 					"@loader_path/../Frameworks",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.meth.tests;
 				PRODUCT_NAME = MethTests;
@@ -669,6 +654,10 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/../Frameworks",
 				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.meth.tests;
 				PRODUCT_NAME = MethTests;
 				SDKROOT = macosx;
@@ -685,6 +674,10 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.meth.app;
 				PRODUCT_NAME = Meth;

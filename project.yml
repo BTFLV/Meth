@@ -13,7 +13,7 @@ settings:
 
 targets:
   MethCore:
-    type: framework
+    type: library.static
     platform: macOS
     sources:
       - Sources/MethCore
@@ -25,6 +25,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.meth.core
         CODE_SIGNING_ALLOWED: NO
         DEFINES_MODULE: YES
+        SKIP_INSTALL: YES
 
   Meth:
     type: application
