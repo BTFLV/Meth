@@ -193,6 +193,7 @@ jobs:
           gh release edit rolling \
             --repo "${{ github.repository }}" \
             --draft=false \
+            --prerelease=false \
             --latest \
             --title "Latest Development Build" \
             --notes-file release_notes.md
