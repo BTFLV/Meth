@@ -6,8 +6,6 @@ sleep, not the sleep macOS triggers when the lid is closed. Meth adds a dedicate
 narrowly-scoped mechanism specifically for that case, so long-running work — builds,
 downloads, remote sessions, local servers — can keep running with the lid shut.
 
-Meth is not affiliated with Amphetamine.
-
 ---
 
 ## Features
@@ -148,8 +146,7 @@ edit `project.yml` and run `xcodegen generate` rather than editing the project d
 Every push to `main` that builds and tests successfully updates a single, persistent
 GitHub Release: **Latest Development Build**, tagged `rolling`. Its `Meth.zip` asset is
 replaced in place (the same download URL always serves the current build), and the
-`rolling` tag always points at the exact commit that produced it. It is a normal,
-continuously-updated release — not marked as a pre-release.
+`rolling` tag always points at the exact commit that produced it.
 
 ---
 

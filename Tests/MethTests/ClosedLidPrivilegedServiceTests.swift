@@ -23,7 +23,10 @@ final class SimulatedPmsetExecutor: ProcessExecuting, @unchecked Sendable {
 
         if arguments.contains("live") {
             let value = sleepDisabled ? "1" : "0"
-            return (0, "SleepDisabled\t\(value)\n", "")
+            // Real `pmset -g live` output is space-separated (often column-aligned with
+            // several spaces); `isSleepDisabled()` splits on " ", so a tab here would never
+            // match and would silently make this always report "not disabled".
+            return (0, "SleepDisabled              \(value)\n", "")
         }
 
         guard arguments.contains("disablesleep"), arguments.contains("0") else {
