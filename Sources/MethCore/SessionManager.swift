@@ -189,12 +189,19 @@ public final class SessionManager: ObservableObject {
         systemSleepAssertion = nil
         displaySleepAssertion = nil
 
+        var closedLidRestored = true
         if session.closedLidMode {
-            await closedLidController.deactivate()
+            closedLidRestored = await closedLidController.deactivate()
         }
 
         self.activeSession = nil
         self.remainingTime = nil
+
+        // A failed revert used to be logged and nothing more: the menu bar went back to
+        // "inactive" while the Mac was in fact still unable to sleep. Surface it instead.
+        if !closedLidRestored {
+            self.lastAutomaticStopReason = "The session was stopped, but normal sleep behavior could not be restored. Your Mac may still refuse to sleep with the lid closed. Meth's watchdog will keep retrying; if the problem persists, reinstall Closed-Lid Support in Settings or run 'sudo pmset -a disablesleep 0' in Terminal."
+        }
     }
 
     public func extendSession(by seconds: TimeInterval) async {

@@ -100,6 +100,10 @@ final class Watchdog {
         // generation, that one (or a normal deactivate) owns the current state now --
         // this watchdog (or an orphaned subprocess of an earlier instance of it) must not
         // touch SleepDisabled on its behalf.
+        // The watchdog can sit blocked in `kevent` for hours, so the value it cached when
+        // it launched may be arbitrarily stale. Force a re-read from the preferences
+        // daemon before deciding whether a newer generation has superseded this one.
+        sharedDefaults.synchronize()
         if let generation, sharedDefaults.string(forKey: ClosedLidSharedState.activeWatchdogGenerationKey) != generation {
             logger.notice("Superseded by a newer Closed-Lid generation; skipping restoration.")
             return 0

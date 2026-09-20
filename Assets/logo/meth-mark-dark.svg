@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="224 174 576 658" width="576" height="658" role="img" aria-label="Meth">
+  <title>Meth</title>
+  <desc>Erlenmeyer flask holding a faceted crystal. Tuned for dark backgrounds.</desc>
+  <defs>
+    <radialGradient id="glowD" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#5EEAD4" stop-opacity="0.42"/>
+      <stop offset="0.45" stop-color="#22D3EE" stop-opacity="0.20"/>
+      <stop offset="1" stop-color="#22D3EE" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="interiorD">
+      <path d="M 440 246 V 406 L 277 738 Q 248 795 306 812 H 718 Q 776 795 747 738 L 584 406 V 246 Z"/>
+    </clipPath>
+  </defs>
+
+  <ellipse cx="512" cy="655" rx="330" ry="300" fill="url(#glowD)"/>
+
+  <path d="M 440 246 V 406 L 277 738 Q 248 795 306 812 H 718 Q 776 795 747 738 L 584 406 V 246 Z"
+        fill="#FFFFFF" fill-opacity="0.07"/>
+
+  <g clip-path="url(#interiorD)">
+    <polygon points="512,500 352,618 455,640" fill="#A7F3FD"/>
+    <polygon points="512,500 672,618 569,640" fill="#67E8F9"/>
+    <polygon points="512,500 455,640 569,640" fill="#EAFDFF"/>
+    <polygon points="352,618 455,640 512,792 410,792" fill="#38BDF8"/>
+    <polygon points="672,618 569,640 512,792 614,792" fill="#0EA5E9"/>
+    <polygon points="455,640 569,640 512,792" fill="#22D3EE"/>
+  </g>
+
+  <path d="M 440 246 V 406 L 277 738 Q 248 795 306 812 H 718 Q 776 795 747 738 L 584 406 V 246 Z"
+        fill="none" stroke="#E2E8F0" stroke-width="27" stroke-linejoin="round"/>
+  <rect x="410" y="194" width="204" height="58" rx="29" fill="#E2E8F0"/>
+</svg>

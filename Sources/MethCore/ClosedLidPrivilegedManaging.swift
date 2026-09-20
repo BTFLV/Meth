@@ -3,6 +3,7 @@ import Foundation
 public enum ClosedLidError: Error, Equatable, LocalizedError {
     case supportNotInstalled
     case activeSessionInProgress
+    case batteryTooLow(Int?)
     case executionFailed(command: String, exitCode: Int32, stderr: String)
     case installationFailed(String)
     case uninstallationFailed(String)
@@ -13,6 +14,9 @@ public enum ClosedLidError: Error, Equatable, LocalizedError {
             return "Closed-Lid support is not installed. Please install it in Settings."
         case .activeSessionInProgress:
             return "Stop the active Closed-Lid session before removing Closed-Lid support."
+        case .batteryTooLow(let level):
+            let reading = level.map { "\($0)%" } ?? "below the safety threshold"
+            return "Closed-Lid Mode was not started: the battery is at \(reading) and the Mac is not connected to power. Connect a power adapter and try again."
         case .executionFailed(let command, let exitCode, let stderr):
             return "Command '\(command)' failed with code \(exitCode): \(stderr)"
         case .installationFailed(let reason):

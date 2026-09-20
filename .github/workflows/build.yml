@@ -150,7 +150,7 @@ jobs:
       - name: Prepare release notes
         run: |
           {
-            echo "# Latest Meth Development Build"
+            echo "# Latest Meth"
             echo
             echo "This is the latest rolling development build of **Meth**, built directly from \`main\`."
             echo
@@ -179,7 +179,7 @@ jobs:
               --repo "${{ github.repository }}" \
               --draft \
               --target "${target_sha}" \
-              --title "Latest Development Build" \
+              --title "Latest Meth" \
               --notes-file release_notes.md
           fi
 
@@ -195,7 +195,7 @@ jobs:
             --draft=false \
             --prerelease=false \
             --latest \
-            --title "Latest Development Build" \
+            --title "Latest Meth" \
             --notes-file release_notes.md
 
       - name: Verify final release state

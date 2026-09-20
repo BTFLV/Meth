@@ -231,7 +231,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
                 let alert = NSAlert()
                 alert.messageText = "Failed to start session"
                 alert.informativeText = errorSummary(for: error)
-                alert.runModal()
+                runAlert(alert)
             }
         }
     }
@@ -239,10 +239,19 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     /// Standardizes what a failure explains to the user: what failed, whether the Mac is
     /// still protected, and what to do next -- without exposing raw shell command text.
     private func errorSummary(for error: Error) -> String {
-        if error is ClosedLidError {
-            return "Closed-Lid Mode could not be enabled. Normal keep-awake protection was not started, so no partially active session was left running.\n\nReinstall Closed-Lid Support in Settings and try again."
+        switch error {
+        case let closedLidError as ClosedLidError:
+            switch closedLidError {
+            case .batteryTooLow:
+                // Self-explanatory and actionable on its own; the generic "reinstall
+                // support" advice below would be actively misleading here.
+                return closedLidError.localizedDescription
+            default:
+                return "Closed-Lid Mode could not be enabled. Normal keep-awake protection was not started, so no partially active session was left running.\n\nReinstall Closed-Lid Support in Settings and try again."
+            }
+        default:
+            return error.localizedDescription
         }
-        return error.localizedDescription
     }
 
     private func showSupportRequiredAlert() {
@@ -251,7 +260,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         alert.informativeText = "Closed-Lid Mode requires installing privileged support in Settings. Would you like to open Settings now?"
         alert.addButton(withTitle: "Open Settings")
         alert.addButton(withTitle: "Cancel")
-        if alert.runModal() == .alertFirstButtonReturn {
+        if runAlert(alert) == .alertFirstButtonReturn {
             openSettings()
         }
     }
@@ -261,7 +270,16 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         let alert = NSAlert()
         alert.messageText = "Session Stopped Automatically"
         alert.informativeText = reason
-        alert.runModal()
+        runAlert(alert)
+    }
+
+    /// An `LSUIElement` app is never the frontmost application on its own, so a modal
+    /// alert would otherwise open behind whatever the user is working in -- blocking Meth
+    /// on a dialog they cannot see.
+    @discardableResult
+    private func runAlert(_ alert: NSAlert) -> NSApplication.ModalResponse {
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal()
     }
 
     @objc private func stopSession() {
@@ -306,10 +324,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func openSettings() {
-        // Uses the standard Settings-scene action so there is exactly one settings window
-        // implementation; this works for `.accessory` apps even without a visible app menu.
-        NSApp.activate(ignoringOtherApps: true)
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        SettingsWindowController.show()
     }
 
     @objc private func quitApp() {

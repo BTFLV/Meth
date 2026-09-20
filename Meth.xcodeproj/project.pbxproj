@@ -18,7 +18,9 @@
 		51DDF770CF31C341017DDCFF /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20F10F998E6E0F840B0DBD77 /* SettingsView.swift */; };
 		56267DA8B077A47F689083B7 /* ClosedLidPrivilegedService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B22C537F9F991DCEB275057 /* ClosedLidPrivilegedService.swift */; };
 		5788C138C086383D11FDB06F /* MethApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02F66685B847D64FE27006CF /* MethApp.swift */; };
+		58CBBCE604E3457DC91E74B1 /* AuxiliaryWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AA8F516070ECB8610D55A86 /* AuxiliaryWindowController.swift */; };
 		59088E8E371AD9DED0A34C0B /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D3226DB1A30E1F1E0D7A04 /* Session.swift */; };
+		5DF783DFD8A88385E3C5B99F /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AEEB73461A248A672344A4D /* SettingsWindowController.swift */; };
 		71C6523466C8C6A5975D37D8 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 399CD2266FFFC59111711E23 /* AppDelegate.swift */; };
 		7BFC556B01D2816A52F8A1E6 /* WatchdogClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97FE010A40CF2BC1A2557E15 /* WatchdogClientTests.swift */; };
 		7C8BEF24E4529A190149E426 /* ClosedLidPrivilegedManaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B15EBB0BC9C24DE94D06AE6 /* ClosedLidPrivilegedManaging.swift */; };
@@ -26,6 +28,7 @@
 		87F9575AFFD7562862655CFC /* libMethCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = FC38B24B46269C5D46DA47E0 /* libMethCore.a */; };
 		8BF0D3DE75548D71384456A0 /* Mocks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89C25C38274CFC4BBD518EF9 /* Mocks.swift */; };
 		A050F343C0B014336DF5BD96 /* ClosedLidPrivilegedServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1BA9A3D650514BC0BB73EAA /* ClosedLidPrivilegedServiceTests.swift */; };
+		B11A61D848AA51FBE59AB7FC /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 85AC55B72D64DDE33DB06280 /* AppIcon.icns */; };
 		B1F6CC3A568D23F689E6EE0C /* libMethCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = FC38B24B46269C5D46DA47E0 /* libMethCore.a */; };
 		B86ACF36408E47FBC4507C98 /* LidStateMonitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CACE8205D6E8EBDC3B511B1 /* LidStateMonitoring.swift */; };
 		B86BB2A72A58E77343D71616 /* ClosedLidControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07AD0346636289B23F4645B6 /* ClosedLidControllerTests.swift */; };
@@ -85,9 +88,11 @@
 		42D3226DB1A30E1F1E0D7A04 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
 		5B77942C01CF7B4A0A27B3FC /* MethWatchdog */ = {isa = PBXFileReference; includeInIndex = 0; path = MethWatchdog; sourceTree = BUILT_PRODUCTS_DIR; };
 		5EB56F2D4949E4CF09605BDA /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		7AA8F516070ECB8610D55A86 /* AuxiliaryWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuxiliaryWindowController.swift; sourceTree = "<group>"; };
 		82FD92B6077FB4C064725C3A /* WatchdogClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchdogClient.swift; sourceTree = "<group>"; };
-		89356D866FACF9D7643AF208 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		85AC55B72D64DDE33DB06280 /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
 		89C25C38274CFC4BBD518EF9 /* Mocks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mocks.swift; sourceTree = "<group>"; };
+		8AEEB73461A248A672344A4D /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
 		8B8443921F24F63AC93D6424 /* PowerSourceMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerSourceMonitor.swift; sourceTree = "<group>"; };
 		97FE010A40CF2BC1A2557E15 /* WatchdogClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchdogClientTests.swift; sourceTree = "<group>"; };
 		B1C969499491A8CE5F2D4D2C /* MenuBarIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarIcon.swift; sourceTree = "<group>"; };
@@ -140,7 +145,7 @@
 		3CE327BDEAC2F97CB1E5A443 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				89356D866FACF9D7643AF208 /* Info.plist */,
+				85AC55B72D64DDE33DB06280 /* AppIcon.icns */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -168,9 +173,11 @@
 		8E34D2DE2DD18C7CB5BD852A /* UI */ = {
 			isa = PBXGroup;
 			children = (
+				7AA8F516070ECB8610D55A86 /* AuxiliaryWindowController.swift */,
 				BA769E8B692D9161A9370A81 /* MenuBarController.swift */,
 				B1C969499491A8CE5F2D4D2C /* MenuBarIcon.swift */,
 				20F10F998E6E0F840B0DBD77 /* SettingsView.swift */,
+				8AEEB73461A248A672344A4D /* SettingsWindowController.swift */,
 				0FDD13BC348E5ACBC7B1A6C0 /* ThermalWarningSheet.swift */,
 				175E08B67D338F7BB6C90045 /* UntilTimePickerView.swift */,
 			);
@@ -262,6 +269,7 @@
 			buildConfigurationList = 7A46EBD6E56DEE14F07A4337 /* Build configuration list for PBXNativeTarget "Meth" */;
 			buildPhases = (
 				46E8BCDC32E5FAAD29C4833F /* Sources */,
+				3E0F18DDF4F747996B8F9AE8 /* Resources */,
 				4C4B5E5DC2AA53DBFF19193C /* Frameworks */,
 			);
 			buildRules = (
@@ -346,6 +354,17 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		3E0F18DDF4F747996B8F9AE8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B11A61D848AA51FBE59AB7FC /* AppIcon.icns in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXShellScriptBuildPhase section */
 		81A92E314FDEC6021EB5E4D2 /* Copy Swift Objective-C Interface Header */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -379,10 +398,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				71C6523466C8C6A5975D37D8 /* AppDelegate.swift in Sources */,
+				58CBBCE604E3457DC91E74B1 /* AuxiliaryWindowController.swift in Sources */,
 				2B73BF0A500D69263A8EBAC8 /* MenuBarController.swift in Sources */,
 				EC47E565D87D7B2FA546A93A /* MenuBarIcon.swift in Sources */,
 				5788C138C086383D11FDB06F /* MethApp.swift in Sources */,
 				51DDF770CF31C341017DDCFF /* SettingsView.swift in Sources */,
+				5DF783DFD8A88385E3C5B99F /* SettingsWindowController.swift in Sources */,
 				BD1BF41B1C0ACEEDC2BF577C /* ThermalWarningSheet.swift in Sources */,
 				4FAF0CDB9565496B38F58162 /* UntilTimePickerView.swift in Sources */,
 			);

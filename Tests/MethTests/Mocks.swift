@@ -120,6 +120,9 @@ final class MockClosedLidPrivilegedService: ClosedLidPrivilegedManaging, @unchec
     var ownershipMarkerSet: Bool = false
     var restoreFailsafeResult: Bool = true
     var restoreFailsafeCallsCount: Int = 0
+    /// Simulates a privileged revert that fails (e.g. the sudoers rule became unusable),
+    /// which must never be reported to the user as a clean stop.
+    var disableShouldFail: Bool = false
 
     func supportStatus() -> ClosedLidSupportStatus {
         lock.lock()
@@ -144,8 +147,15 @@ final class MockClosedLidPrivilegedService: ClosedLidPrivilegedManaging, @unchec
     func disableSleepDisabled() throws {
         lock.lock()
         defer { lock.unlock() }
-        sleepDisabled = false
         disableCallsCount += 1
+        if disableShouldFail {
+            throw ClosedLidError.executionFailed(
+                command: "sudo -n pmset -a disablesleep 0",
+                exitCode: 1,
+                stderr: "simulated failure"
+            )
+        }
+        sleepDisabled = false
     }
 
     func putDisplayToSleep() {

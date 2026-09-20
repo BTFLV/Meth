@@ -1,4 +1,18 @@
-# Meth
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="Assets/rendered/meth-wordmark-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="Assets/rendered/meth-wordmark-light.png">
+    <img alt="Meth — keep your Mac awake" src="Assets/rendered/meth-wordmark-light.png" width="420">
+  </picture>
+</p>
+
+<p align="center">
+  <a href="../../actions/workflows/build.yml"><img alt="Build status" src="../../actions/workflows/build.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-black?logo=apple">
+</p>
+
+---
 
 Meth is a lightweight, native macOS menu bar utility for controlling system sleep. Its
 defining feature is **Closed-Lid Mode**: ordinary "keep awake" tools only prevent *idle*
@@ -18,6 +32,18 @@ downloads, remote sessions, local servers — can keep running with the lid shut
 - **Closed-Lid Mode** — keeps the Mac running with the lid closed, with an automatic
   low-battery safety cutoff and a crash-recovery watchdog (see below).
 - **Launch at Login**, backed by `SMAppService`.
+
+### Menu bar icon
+
+The status item is a template image drawn from vector paths, so it stays crisp at any
+resolution and follows the system's light/dark appearance and menu highlighting. Its three
+states are distinguishable at a glance:
+
+| Icon | Meaning |
+| --- | --- |
+| Empty flask | No session — your Mac sleeps normally |
+| Flask with a crystal | A keep-awake session is running |
+| Solid flask | A session is running **with Closed-Lid Mode** |
 
 ---
 
@@ -58,9 +84,10 @@ the exact moment recovery is attempted), but every reasonable failure path is co
 
 **Thermal and battery safety.** Closed-Lid Mode keeps the CPU, memory, and fans active
 with the lid shut, which increases heat and battery use. Meth does not override macOS's
-own critical-battery or thermal-emergency behavior, and automatically stops a Closed-Lid
-session if the battery drops to 10% or below on battery power. Never place an actively
-running, closed MacBook in an enclosed bag or unventilated space.
+own critical-battery or thermal-emergency behavior, refuses to *start* a Closed-Lid
+session while already at 10% or below on battery power, and automatically stops a running
+one if the battery drops to that threshold. Never place an actively running, closed
+MacBook in an enclosed bag or unventilated space.
 
 ---
 
@@ -82,7 +109,7 @@ running, closed MacBook in an enclosed bag or unventilated space.
 
 ## Installation
 
-1. Download `Meth.zip` from the [latest development build](../../releases/tag/rolling).
+1. Download `Meth.zip` from the [**Latest Meth**](../../releases/tag/rolling) release.
 2. Unzip it and move `Meth.app` to `/Applications`.
 3. Open `Meth.app`. Since development builds are not notarized, the first launch requires
    right-clicking the app and choosing **Open**.
@@ -144,9 +171,24 @@ edit `project.yml` and run `xcodegen generate` rather than editing the project d
 ## Development builds
 
 Every push to `main` that builds and tests successfully updates a single, persistent
-GitHub Release: **Latest Development Build**, tagged `rolling`. Its `Meth.zip` asset is
-replaced in place (the same download URL always serves the current build), and the
-`rolling` tag always points at the exact commit that produced it.
+GitHub Release: **Latest Meth**, tagged `rolling`. Its `Meth.zip` asset is replaced in
+place (the same download URL always serves the current build), and the `rolling` tag
+always points at the exact commit that produced it.
+
+---
+
+## Brand assets
+
+The logo — an Erlenmeyer flask holding a faceted crystal — lives in
+[`Assets/logo`](Assets/logo) as SVG, in light, dark, and full-colour app icon variants.
+Everything else is derived from those sources by
+[`scripts/generate_logo_assets.sh`](scripts/generate_logo_assets.sh): the README artwork in
+`Assets/rendered`, and the app's `AppIcon.icns`. The generated files are committed, so no
+build or CI step needs an SVG toolchain; re-run the script only after editing an SVG.
+
+The menu bar glyph is deliberately *not* derived from them — at 16-18 pt it needs its own
+weights, so it is drawn directly from vector paths in
+[`MenuBarIcon.swift`](Sources/Meth/UI/MenuBarIcon.swift).
 
 ---
 

@@ -165,6 +165,25 @@ final class SessionManagerTests: XCTestCase {
         XCTAssertNil(sessionManager.activeSession)
     }
 
+    func testFailedClosedLidRevertIsSurfacedInsteadOfReportedAsACleanStop() async throws {
+        try await sessionManager.startSession(
+            duration: .preset(600),
+            allowDisplaySleep: true,
+            closedLidMode: true
+        )
+        XCTAssertTrue(sessionManager.isSessionActive)
+
+        mockPrivileged.disableShouldFail = true
+        await sessionManager.stopSession()
+
+        XCTAssertFalse(sessionManager.isSessionActive)
+        XCTAssertNotNil(
+            sessionManager.lastAutomaticStopReason,
+            "The user must be told that normal sleep behavior could not be restored."
+        )
+        mockPrivileged.disableShouldFail = false
+    }
+
     func testPresetSessionExpiresAuthoritativelyViaMonotonicClock() async throws {
         try await sessionManager.startSession(
             duration: .preset(0.2),

@@ -51,37 +51,35 @@ public struct UntilTimePickerView: View {
     }
 }
 
-public final class UntilTimeWindowController: NSWindowController {
-    private var completion: ((Date?) -> Void)?
-
+@MainActor
+public enum UntilTimeWindowController {
+    /// The completion is called exactly once — with `nil` if the user cancels or closes
+    /// the window, and with the chosen date otherwise.
     public static func show(completion: @escaping (Date?) -> Void) {
-        let controller = UntilTimeWindowController()
-        controller.completion = completion
+        var hasAnswered = false
 
-        let view = UntilTimePickerView(
-            onConfirm: { date in
-                controller.window?.close()
-                completion(date)
-            },
-            onCancel: {
-                controller.window?.close()
+        AuxiliaryWindowController.present(
+            title: "Meth — Until Time",
+            size: NSSize(width: 280, height: 230),
+            onCloseWithoutAction: {
+                guard !hasAnswered else { return }
+                hasAnswered = true
                 completion(nil)
             }
-        )
-
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 280, height: 180),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        window.center()
-        window.title = "Meth — Until Time"
-        window.contentView = NSHostingView(rootView: view)
-        window.level = .floating
-        controller.window = window
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        ) { dismiss in
+            UntilTimePickerView(
+                onConfirm: { date in
+                    hasAnswered = true
+                    dismiss()
+                    completion(date)
+                },
+                onCancel: {
+                    hasAnswered = true
+                    dismiss()
+                    completion(nil)
+                }
+            )
+        }
     }
 }
 

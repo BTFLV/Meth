@@ -43,34 +43,35 @@ public struct ThermalWarningView: View {
     }
 }
 
-public final class ThermalWarningWindowController: NSWindowController {
+@MainActor
+public enum ThermalWarningWindowController {
+    /// Closing the window with its close button counts as *not* acknowledging the warning
+    /// and runs `onCancel`, so the caller never proceeds on an unacknowledged notice.
     public static func show(onConfirm: @escaping () -> Void, onCancel: @escaping () -> Void) {
-        let controller = ThermalWarningWindowController()
+        var hasAnswered = false
 
-        let view = ThermalWarningView(
-            onAcknowledge: {
-                controller.window?.close()
-                onConfirm()
-            },
-            onCancel: {
-                controller.window?.close()
+        AuxiliaryWindowController.present(
+            title: "Meth — Safety Notice",
+            size: NSSize(width: 380, height: 300),
+            onCloseWithoutAction: {
+                guard !hasAnswered else { return }
+                hasAnswered = true
                 onCancel()
             }
-        )
-
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 240),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        window.center()
-        window.title = "Meth — Safety Notice"
-        window.contentView = NSHostingView(rootView: view)
-        window.level = .floating
-        controller.window = window
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        ) { dismiss in
+            ThermalWarningView(
+                onAcknowledge: {
+                    hasAnswered = true
+                    dismiss()
+                    onConfirm()
+                },
+                onCancel: {
+                    hasAnswered = true
+                    dismiss()
+                    onCancel()
+                }
+            )
+        }
     }
 }
 

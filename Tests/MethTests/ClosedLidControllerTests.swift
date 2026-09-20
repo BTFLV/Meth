@@ -130,6 +130,46 @@ final class ClosedLidControllerTests: XCTestCase {
         XCTAssertFalse(mockPrivileged.sleepDisabled)
     }
 
+    func testActivationIsRefusedWhenBatteryIsAlreadyBelowThreshold() async {
+        // The low-battery cutoff only reacts to power source *changes*, so a session
+        // started while already below the threshold would otherwise run unprotected until
+        // the battery happened to change again.
+        mockSource.simulatedState = PowerSourceState(
+            hasExternalPower: false,
+            isCharging: false,
+            batteryLevel: 7,
+            isLowBattery: true
+        )
+
+        do {
+            try await controller.activate()
+            XCTFail("Expected activation to be refused on low battery")
+        } catch {
+            XCTAssertEqual(error as? ClosedLidError, .batteryTooLow(7))
+        }
+
+        let state = await controller.currentState
+        XCTAssertEqual(state, .inactive)
+        XCTAssertFalse(mockPrivileged.sleepDisabled)
+        XCTAssertFalse(mockLid.isMonitoring)
+        XCTAssertFalse(mockSource.isMonitoring)
+    }
+
+    func testDeactivationReportsFailureWhenRevertDoesNotSucceed() async throws {
+        try await controller.activate()
+        mockPrivileged.disableShouldFail = true
+
+        let restored = await controller.deactivate()
+        XCTAssertFalse(restored, "A failed revert must not be reported as a successful stop.")
+        XCTAssertTrue(mockPrivileged.sleepDisabled, "SleepDisabled is still set; the Mac may not sleep.")
+
+        let state = await controller.currentState
+        XCTAssertEqual(state, .inactive)
+
+        // Let the (still required) teardown in tearDown() succeed.
+        mockPrivileged.disableShouldFail = false
+    }
+
     func testAppleSiliconPowerSourceTransitionReEnforcesSleepDisabled() async throws {
         try await controller.activate()
         XCTAssertTrue(mockPrivileged.sleepDisabled)

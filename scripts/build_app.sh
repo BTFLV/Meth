@@ -47,6 +47,10 @@ sed \
   "${ROOT_DIR}/Sources/Meth/Resources/Info.plist" > "${APP_BUNDLE}/Contents/Info.plist"
 printf "APPL????" > "${APP_BUNDLE}/Contents/PkgInfo"
 
+# App icon. Committed as a pre-rendered .icns (see scripts/generate_logo_assets.sh) so
+# packaging needs no SVG toolchain.
+cp "${ROOT_DIR}/Sources/Meth/Resources/AppIcon.icns" "${RESOURCES_DIR}/AppIcon.icns"
+
 # Ad-hoc code sign for local running without Apple Developer identity
 echo "==> Ad-hoc signing Meth.app..."
 codesign --force --deep --sign - "${APP_BUNDLE}"
@@ -65,6 +69,8 @@ for binary in Meth MethWatchdog; do
     *) echo "${path} is not a Universal 2 (arm64 + x86_64) binary: ${archs}" >&2; exit 1 ;;
   esac
 done
+
+[ -s "${RESOURCES_DIR}/AppIcon.icns" ] || { echo "Missing ${RESOURCES_DIR}/AppIcon.icns" >&2; exit 1; }
 
 plutil -lint "${APP_BUNDLE}/Contents/Info.plist" >/dev/null
 identifier="$(plutil -extract CFBundleIdentifier raw "${APP_BUNDLE}/Contents/Info.plist")"
@@ -86,7 +92,8 @@ zip_listing="$(unzip -Z1 "${ZIP_PATH}")"
 for expected in \
   "Meth.app/Contents/MacOS/Meth" \
   "Meth.app/Contents/MacOS/MethWatchdog" \
-  "Meth.app/Contents/Info.plist"; do
+  "Meth.app/Contents/Info.plist" \
+  "Meth.app/Contents/Resources/AppIcon.icns"; do
   found=0
   while IFS= read -r entry; do
     if [ "${entry}" = "${expected}" ]; then

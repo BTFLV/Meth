@@ -20,7 +20,9 @@ let package = Package(
             name: "Meth",
             dependencies: ["MethCore"],
             path: "Sources/Meth",
-            exclude: ["Resources/Info.plist"]
+            // Both are placed into the .app bundle by scripts/build_app.sh (and by Xcode
+            // for the xcodeproj route), never by SwiftPM's resource machinery.
+            exclude: ["Resources/Info.plist", "Resources/AppIcon.icns"]
         ),
         .executableTarget(
             name: "MethWatchdog",

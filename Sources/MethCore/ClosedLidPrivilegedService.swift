@@ -113,16 +113,23 @@ public final class ClosedLidPrivilegedService: ClosedLidPrivilegedManaging, @unc
         return false
     }
 
+    // The marker is written by `Meth.app` and read/cleared by the separate `MethWatchdog`
+    // process, so every access explicitly flushes or re-reads the shared suite rather than
+    // trusting whatever each process cached at launch.
+
     public func isOwnershipMarkerSet() -> Bool {
-        ownershipDefaults.bool(forKey: Self.ownershipMarkerKey)
+        ownershipDefaults.synchronize()
+        return ownershipDefaults.bool(forKey: Self.ownershipMarkerKey)
     }
 
     public func clearOwnershipMarker() {
         ownershipDefaults.removeObject(forKey: Self.ownershipMarkerKey)
+        ownershipDefaults.synchronize()
     }
 
     private func setOwnershipMarker() {
         ownershipDefaults.set(true, forKey: Self.ownershipMarkerKey)
+        ownershipDefaults.synchronize()
     }
 
     // MARK: - Mutating operations

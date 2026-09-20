@@ -53,9 +53,10 @@ public final class WatchdogClient: @unchecked Sendable {
         process.standardError = FileHandle.nullDevice
 
         do {
-            // Published before the process is spawned, so the generation is guaranteed
-            // visible by the time the watchdog itself starts checking it.
+            // Published *and flushed* before the process is spawned, so the generation is
+            // guaranteed visible to the separate watchdog process from its first read.
             sharedDefaults.set(generation, forKey: ClosedLidSharedState.activeWatchdogGenerationKey)
+            sharedDefaults.synchronize()
             try process.run()
             self.watchdogProcess = process
             logger.info("Spawned MethWatchdog (PID: \(process.processIdentifier), generation \(generation))")
@@ -71,6 +72,7 @@ public final class WatchdogClient: @unchecked Sendable {
         // No generation is authorized to act once we are deliberately stopping: the normal
         // deactivate path restores sleep itself rather than relying on the watchdog.
         sharedDefaults.removeObject(forKey: ClosedLidSharedState.activeWatchdogGenerationKey)
+        sharedDefaults.synchronize()
         stopInternal()
     }
 

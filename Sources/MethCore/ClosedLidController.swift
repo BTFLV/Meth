@@ -107,6 +107,16 @@ public actor ClosedLidController {
             throw ClosedLidError.supportNotInstalled
         }
 
+        // The low-battery cutoff below only reacts to power source *changes*. Without this
+        // check, starting a Closed-Lid session while already below the threshold would run
+        // unprotected until the battery happened to change again -- exactly the situation
+        // the cutoff exists to prevent.
+        let power = powerMonitor.currentState
+        guard !power.isLowBattery else {
+            state = .inactive
+            throw ClosedLidError.batteryTooLow(power.batteryLevel)
+        }
+
         // Arm the watchdog before mutating SleepDisabled: if Meth crashes in the narrow
         // window right after enabling sleep, the watchdog is already watching and can
         // still recover, instead of depending solely on the next app launch.
@@ -126,13 +136,20 @@ public actor ClosedLidController {
         logger.info("Closed-Lid Mode successfully activated.")
     }
 
-    public func deactivate() {
-        guard state == .active || state == .activating else { return }
+    /// - Returns: `true` if normal sleep behavior is known to be restored (including when
+    ///   Closed-Lid Mode was not active to begin with). `false` means the privileged revert
+    ///   failed and the Mac may still be unable to sleep; the watchdog is deliberately left
+    ///   running in that case, and callers should tell the user rather than reporting a
+    ///   clean stop.
+    @discardableResult
+    public func deactivate() -> Bool {
+        guard state == .active || state == .activating else { return true }
         state = .deactivating
 
         lidMonitor.stopMonitoring()
         powerMonitor.stopMonitoring()
 
+        var restored = false
         do {
             try privilegedService.disableSleepDisabled()
             logger.info("Closed-Lid Mode deactivated and SleepDisabled reverted.")
@@ -140,10 +157,12 @@ public actor ClosedLidController {
             // watchdog is left running as a continued safety net rather than removing the
             // one thing that might still recover the Mac later.
             watchdogClient.stop()
+            restored = true
         } catch {
             logger.error("Error reverting SleepDisabled: \(error.localizedDescription)")
         }
         state = .inactive
+        return restored
     }
 
     /// Removing privileged support must never be allowed to happen underneath an active

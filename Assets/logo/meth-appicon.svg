@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="Meth app icon">
+  <title>Meth</title>
+  <defs>
+    <linearGradient id="plate" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#4C2E9B"/>
+      <stop offset="0.42" stop-color="#2A1A63"/>
+      <stop offset="1" stop-color="#100A2E"/>
+    </linearGradient>
+
+    <linearGradient id="plateSheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0.04"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <radialGradient id="crystalGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#5EEAD4" stop-opacity="0.85"/>
+      <stop offset="0.45" stop-color="#22D3EE" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#22D3EE" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.20"/>
+      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0.06"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.14"/>
+    </linearGradient>
+
+    <linearGradient id="glassEdge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.98"/>
+      <stop offset="0.6" stop-color="#D8E7FF" stop-opacity="0.82"/>
+      <stop offset="1" stop-color="#A9C4FF" stop-opacity="0.72"/>
+    </linearGradient>
+
+    <clipPath id="flaskInterior">
+      <path d="M 440 246 V 406 L 277 738 Q 248 795 306 812 H 718 Q 776 795 747 738 L 584 406 V 246 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- Rounded plate -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#plate)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#plateSheen)"/>
+  <rect x="108" y="108" width="808" height="808" rx="177" fill="none" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="3"/>
+
+  <!-- Glow cast by the crystal through the glass -->
+  <ellipse cx="512" cy="655" rx="360" ry="330" fill="url(#crystalGlow)"/>
+
+  <!-- Flask -->
+  <g>
+    <path d="M 440 246 V 406 L 277 738 Q 248 795 306 812 H 718 Q 776 795 747 738 L 584 406 V 246 Z"
+          fill="url(#glass)"/>
+
+    <!-- Crystal, clipped so it can never spill past the glass -->
+    <g clip-path="url(#flaskInterior)">
+      <polygon points="512,500 352,618 455,640" fill="#A7F3FD"/>
+      <polygon points="512,500 672,618 569,640" fill="#67E8F9"/>
+      <polygon points="512,500 455,640 569,640" fill="#EAFDFF"/>
+      <polygon points="352,618 455,640 512,792 410,792" fill="#38BDF8"/>
+      <polygon points="672,618 569,640 512,792 614,792" fill="#0EA5E9"/>
+      <polygon points="455,640 569,640 512,792" fill="#22D3EE"/>
+      <!-- Light pooling at the base of the flask -->
+      <ellipse cx="512" cy="800" rx="230" ry="46" fill="#7DD3FC" opacity="0.45"/>
+    </g>
+
+    <!-- Glass edge -->
+    <path d="M 440 246 V 406 L 277 738 Q 248 795 306 812 H 718 Q 776 795 747 738 L 584 406 V 246 Z"
+          fill="none" stroke="url(#glassEdge)" stroke-width="27" stroke-linejoin="round"/>
+
+    <!-- Flask lip -->
+    <rect x="410" y="194" width="204" height="58" rx="29" fill="url(#glassEdge)"/>
+
+    <!-- Specular highlight down the left wall -->
+    <path d="M 474 290 V 400 L 360 630" fill="none" stroke="#FFFFFF" stroke-opacity="0.55"
+          stroke-width="14" stroke-linecap="round"/>
+  </g>
+
+  <!-- Stray crystal sparks -->
+  <path d="M 742 292 L 762 336 L 806 356 L 762 376 L 742 420 L 722 376 L 678 356 L 722 336 Z"
+        fill="#E0FBFF" opacity="0.92"/>
+  <path d="M 812 440 L 823 465 L 848 476 L 823 487 L 812 512 L 801 487 L 776 476 L 801 465 Z"
+        fill="#A5F3FC" opacity="0.7"/>
+</svg>
