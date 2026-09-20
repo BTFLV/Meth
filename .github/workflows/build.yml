@@ -1,4 +1,4 @@
-name: Build & Test
+name: CI & Release
 
 on:
   push:
@@ -11,22 +11,20 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-
 jobs:
   build-and-test:
     name: Build & Test
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 30
+    permissions:
+      contents: read
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode version
+      - name: Display environment
         run: |
-          sudo xcode-select -s /Applications/Xcode_15.4.app || true
           xcodebuild -version
           swift --version
 
@@ -43,7 +41,54 @@ jobs:
 
       - name: Build and test with xcodebuild
         run: |
-          # Build project using xcodebuild without code signing
           xcodebuild build -project Meth.xcodeproj -scheme Meth -configuration Release CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
           xcodebuild test -project Meth.xcodeproj -scheme MethTests -destination "platform=macOS" CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO || echo "xcodebuild test completed"
 
+      - name: Upload Meth.zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Meth-dist
+          path: dist/Meth.zip
+          retention-days: 7
+
+  release:
+    name: Rolling Release
+    needs: build-and-test
+    runs-on: macos-15
+    timeout-minutes: 30
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download built Meth.zip
+        uses: actions/download-artifact@v4
+        with:
+          name: Meth-dist
+          path: dist
+
+      - name: Update persistent rolling tag
+        run: |
+          git tag -f rolling
+          git push origin -f rolling
+
+      - name: Publish or update rolling release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TITLE="Latest Development Build"
+          RELEASE_NOTES="Automated rolling build from commit \`${{ github.sha }}\` on \`main\`.\n\n### Installation\n1. Download \`Meth.zip\`\n2. Unzip and drag \`Meth.app\` into \`/Applications\`\n3. Launch Meth from Applications."
+
+          # Delete existing release for the rolling tag if present to replace assets cleanly
+          gh release delete rolling -y || true
+
+          # Create fresh release for rolling tag with asset
+          gh release create rolling dist/Meth.zip \
+            --title "${RELEASE_TITLE}" \
+            --notes "${RELEASE_NOTES}" \
+            --prerelease
