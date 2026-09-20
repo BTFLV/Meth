@@ -3,8 +3,7 @@ options:
   bundleIdPrefix: com.meth
   deploymentTarget:
     macOS: "13.0"
-  xcodeVersion: "15.0"
-  postGenCommand: sed -i '' 's/objectVersion = [0-9]*/objectVersion = 56/' Meth.xcodeproj/project.pbxproj
+  xcodeVersion: "16.0"
 
 settings:
   base:
