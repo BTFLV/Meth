@@ -1,0 +1,44 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Meth}",
+            "name": "Debug Meth",
+            "target": "Meth",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug Meth"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Meth}",
+            "name": "Release Meth",
+            "target": "Meth",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release Meth"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Meth}",
+            "name": "Debug MethWatchdog",
+            "target": "MethWatchdog",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug MethWatchdog"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Meth}",
+            "name": "Release MethWatchdog",
+            "target": "MethWatchdog",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release MethWatchdog"
+        }
+    ]
+}

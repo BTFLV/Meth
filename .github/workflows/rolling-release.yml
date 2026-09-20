@@ -1,0 +1,57 @@
+name: Rolling Release
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: rolling-release
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  rolling-release:
+    name: Build and Update Rolling Release
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode version
+        run: |
+          sudo xcode-select -s /Applications/Xcode_15.4.app || true
+          xcodebuild -version
+
+      - name: Package Meth.app and Meth.zip
+        run: |
+          chmod +x scripts/build_app.sh
+          ./scripts/build_app.sh
+
+      - name: Update persistent rolling tag
+        run: |
+          git tag -f rolling
+          git push origin -f rolling
+
+      - name: Publish or update rolling release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_TITLE="Latest Development Build"
+          RELEASE_NOTES="Automated rolling build from commit \`${{ github.sha }}\` on \`main\`.\n\n### Installation\n1. Download \`Meth.zip\`\n2. Unzip and drag \`Meth.app\` into \`/Applications\`\n3. Launch Meth from Applications (or open via right-click -> Open if macOS Gatekeeper prompts on unsigned binary)."
+
+          # Delete existing release for the rolling tag if present to replace assets cleanly
+          gh release delete rolling -y || true
+
+          # Create fresh release for rolling tag with asset
+          gh release create rolling dist/Meth.zip \
+            --title "${RELEASE_TITLE}" \
+            --notes "${RELEASE_NOTES}" \
+            --prerelease
+

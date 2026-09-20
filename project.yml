@@ -1,0 +1,68 @@
+name: Meth
+options:
+  bundleIdPrefix: com.meth
+  deploymentTarget:
+    macOS: "13.0"
+  xcodeVersion: "15.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MACOSX_DEPLOYMENT_TARGET: "13.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+targets:
+  MethCore:
+    type: framework
+    platform: macOS
+    sources:
+      - Sources/MethCore
+    frameworks:
+      - framework: IOKit.framework
+    settings:
+      base:
+        PRODUCT_NAME: MethCore
+        PRODUCT_BUNDLE_IDENTIFIER: com.meth.core
+        CODE_SIGNING_ALLOWED: NO
+        DEFINES_MODULE: YES
+
+  Meth:
+    type: application
+    platform: macOS
+    sources:
+      - Sources/Meth
+    dependencies:
+      - target: MethCore
+    info:
+      path: Sources/Meth/Resources/Info.plist
+    settings:
+      base:
+        PRODUCT_NAME: Meth
+        PRODUCT_BUNDLE_IDENTIFIER: com.meth.app
+        INFOPLIST_FILE: Sources/Meth/Resources/Info.plist
+        CODE_SIGNING_ALLOWED: NO
+
+  MethWatchdog:
+    type: tool
+    platform: macOS
+    sources:
+      - Sources/MethWatchdog
+    settings:
+      base:
+        PRODUCT_NAME: MethWatchdog
+        PRODUCT_BUNDLE_IDENTIFIER: com.meth.watchdog
+        CODE_SIGNING_ALLOWED: NO
+
+  MethTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Tests/MethTests
+    dependencies:
+      - target: MethCore
+    settings:
+      base:
+        PRODUCT_NAME: MethTests
+        PRODUCT_BUNDLE_IDENTIFIER: com.meth.tests
+        CODE_SIGNING_ALLOWED: NO
+
