@@ -4,6 +4,7 @@ options:
   deploymentTarget:
     macOS: "13.0"
   xcodeVersion: "15.0"
+  postGenCommand: sed -i '' 's/objectVersion = [0-9]*/objectVersion = 56/' Meth.xcodeproj/project.pbxproj
 
 settings:
   base:
@@ -35,6 +36,11 @@ targets:
       - target: MethCore
     info:
       path: Sources/Meth/Resources/Info.plist
+      properties:
+        LSUIElement: true
+        LSMinimumSystemVersion: "13.0"
+        NSHighResolutionCapable: true
+        NSPrincipalClass: NSApplication
     settings:
       base:
         PRODUCT_NAME: Meth
