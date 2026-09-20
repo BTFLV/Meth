@@ -16,9 +16,14 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         self.menuBarController = MenuBarController()
     }
 
-    public func applicationWillTerminate(_ notification: Notification) {
-        // Ensure all assertions and privileged states are restored
-        SessionManager.shared.stopSession()
+    // Session cleanup involves an async privileged operation, so termination is deferred
+    // until it actually completes rather than risking the process exiting mid-cleanup.
+    public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        Task { @MainActor in
+            await SessionManager.shared.stopSession()
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 }
 

@@ -1,6 +1,16 @@
 import Foundation
 import MethCore
 
+/// Tests must never spawn the real MethWatchdog binary or touch the real shared
+/// UserDefaults suite (`ClosedLidSharedState.defaults`), so every test that constructs a
+/// `ClosedLidController` should use this instead of `WatchdogClient()`.
+func makeIsolatedWatchdogClient() -> WatchdogClient {
+    WatchdogClient(
+        sharedDefaults: UserDefaults(suiteName: "com.meth.tests.\(UUID().uuidString)")!,
+        binaryLocator: { nil }
+    )
+}
+
 final class MockPowerAssertionManager: PowerAssertionManaging, @unchecked Sendable {
     private let lock = NSLock()
     var createdAssertions: [(type: PowerAssertionType, name: String, id: PowerAssertionID)] = []
@@ -102,11 +112,20 @@ final class MockPowerSourceMonitor: PowerSourceMonitoring, @unchecked Sendable {
 
 final class MockClosedLidPrivilegedService: ClosedLidPrivilegedManaging, @unchecked Sendable {
     private let lock = NSLock()
-    var isSupportInstalled: Bool = true
+    var status: ClosedLidSupportStatus = .installed
     var sleepDisabled: Bool = false
     var displaySleepTriggeredCount: Int = 0
     var enableCallsCount: Int = 0
     var disableCallsCount: Int = 0
+    var ownershipMarkerSet: Bool = false
+    var restoreFailsafeResult: Bool = true
+    var restoreFailsafeCallsCount: Int = 0
+
+    func supportStatus() -> ClosedLidSupportStatus {
+        lock.lock()
+        defer { lock.unlock() }
+        return status
+    }
 
     func isSleepDisabled() -> Bool {
         lock.lock()
@@ -117,7 +136,7 @@ final class MockClosedLidPrivilegedService: ClosedLidPrivilegedManaging, @unchec
     func enableSleepDisabled() throws {
         lock.lock()
         defer { lock.unlock() }
-        guard isSupportInstalled else { throw ClosedLidError.supportNotInstalled }
+        guard status == .installed else { throw ClosedLidError.supportNotInstalled }
         sleepDisabled = true
         enableCallsCount += 1
     }
@@ -138,14 +157,60 @@ final class MockClosedLidPrivilegedService: ClosedLidPrivilegedManaging, @unchec
     func installSupport() throws {
         lock.lock()
         defer { lock.unlock() }
-        isSupportInstalled = true
+        status = .installed
     }
 
     func uninstallSupport() throws {
         lock.lock()
         defer { lock.unlock() }
-        isSupportInstalled = false
+        status = .notInstalled
         sleepDisabled = false
+    }
+
+    @discardableResult
+    func restoreSleepDisabledForFailsafe(maxAttempts: Int) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        restoreFailsafeCallsCount += 1
+        if restoreFailsafeResult {
+            sleepDisabled = false
+        }
+        return restoreFailsafeResult
+    }
+
+    func isOwnershipMarkerSet() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return ownershipMarkerSet
+    }
+
+    func clearOwnershipMarker() {
+        lock.lock()
+        defer { lock.unlock() }
+        ownershipMarkerSet = false
+    }
+}
+
+/// Records every command issued to it instead of running anything, so tests can assert
+/// which commands a real `ClosedLidPrivilegedService` does (and does not) execute.
+final class RecordingProcessExecutor: ProcessExecuting, @unchecked Sendable {
+    private let lock = NSLock()
+    private(set) var invocations: [(executable: String, arguments: [String])] = []
+    var resultProvider: (String, [String]) -> (exitCode: Int32, stdout: String, stderr: String) = { _, _ in (0, "", "") }
+
+    func execute(executable: String, arguments: [String]) -> (exitCode: Int32, stdout: String, stderr: String) {
+        lock.lock()
+        invocations.append((executable, arguments))
+        lock.unlock()
+        return resultProvider(executable, arguments)
+    }
+
+    var everMutatedDisableSleep: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return invocations.contains { call in
+            call.arguments.contains("disablesleep") && !call.arguments.contains("-l")
+        }
     }
 }
 

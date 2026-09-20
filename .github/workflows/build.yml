@@ -1,94 +1,220 @@
-name: CI & Release
+name: Build and Release
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
   workflow_dispatch:
 
+# Outdated builds for the same ref can be cancelled freely (nothing user-facing depends on
+# them); the `release` job below overrides this with its own non-cancelable group so a
+# rolling-release publication can never be interrupted mid-way.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: meth-build-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  build-and-test:
-    name: Build & Test
-    runs-on: macos-latest
+  # Canonical correctness gate: builds the real Xcode project/scheme and runs the actual
+  # XCTest suite. A lightweight SwiftPM build is kept alongside it because Package.swift is
+  # a separately documented, supported build route that can drift from the Xcode project.
+  verify:
+    name: Verify
+    runs-on: macos-15
     timeout-minutes: 30
-    permissions:
-      contents: read
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Display environment
+      - name: Show toolchain versions
         run: |
           xcodebuild -version
           swift --version
 
-      - name: Build with Swift Package Manager (Release)
-        run: swift build -c release
+      - name: Swift Package build (sanity check)
+        run: swift build
 
-      - name: Run unit tests with Swift Package Manager
-        run: swift test
-
-      - name: Build application bundle
+      - name: Build Meth (Xcode, Release)
         run: |
-          chmod +x scripts/build_app.sh
-          ./scripts/build_app.sh
+          xcodebuild build \
+            -project Meth.xcodeproj \
+            -scheme Meth \
+            -configuration Release \
+            -derivedDataPath .derivedData \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
 
-      - name: Build and test with xcodebuild
+      - name: Run MethTests
         run: |
-          xcodebuild build -project Meth.xcodeproj -scheme Meth -configuration Release CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
-          xcodebuild test -project Meth.xcodeproj -scheme MethTests -destination "platform=macOS" CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO || echo "xcodebuild test completed"
+          set -o pipefail
+          xcodebuild test \
+            -project Meth.xcodeproj \
+            -scheme MethTests \
+            -destination "platform=macOS" \
+            -derivedDataPath .derivedData \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee test-output.log
 
-      - name: Upload Meth.zip artifact
-        uses: actions/upload-artifact@v4
+      - name: Confirm tests actually executed
+        run: |
+          set -euo pipefail
+          summary_line="$(grep -E "Executed [0-9]+ tests?," test-output.log | tail -1 || true)"
+          if [ -z "${summary_line}" ]; then
+            echo "Could not find an 'Executed N tests' summary line in xcodebuild output; treating as a failure." >&2
+            exit 1
+          fi
+          count="$(echo "${summary_line}" | grep -oE "Executed [0-9]+" | grep -oE "[0-9]+")"
+          echo "xcodebuild reported: ${summary_line}"
+          if [ "${count}" -lt 1 ]; then
+            echo "xcodebuild test executed zero tests." >&2
+            exit 1
+          fi
+
+  # Produces the actual downloadable artifact: a Universal 2 (arm64 + x86_64) Meth.app,
+  # zipped, with its own internal validation (see scripts/build_app.sh). This is the only
+  # place the release artifact is built; Release never rebuilds anything.
+  package:
+    name: Package
+    needs: verify
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and package Meth.app
+        run: ./scripts/build_app.sh
+
+      - uses: actions/upload-artifact@v4
         with:
           name: Meth-dist
           path: dist/Meth.zip
-          retention-days: 7
+          retention-days: 14
 
+  # Publishes/updates the single persistent "rolling" release from the exact commit that
+  # was just verified and packaged. Only runs for pushes to main or a manual dispatch on
+  # main; never for pull requests. Needs no macOS-specific tooling.
   release:
-    name: Rolling Release
-    needs: build-and-test
-    runs-on: macos-latest
+    name: Update Rolling Release
+    needs: package
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    concurrency:
+      group: meth-rolling-release
+      cancel-in-progress: false
     permissions:
       contents: write
-
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Download built Meth.zip
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: Meth-dist
           path: dist
 
-      - name: Update persistent rolling tag
+      - name: Validate the packaged artifact
         run: |
-          git tag -f rolling
-          git push origin -f rolling
+          set -euo pipefail
+          test -s dist/Meth.zip
+          unzip -tq dist/Meth.zip
 
-      - name: Publish or update rolling release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Refuse to move the rolling release backwards
         run: |
-          RELEASE_TITLE="Latest Development Build"
-          RELEASE_NOTES="Automated rolling build from commit \`${{ github.sha }}\` on \`main\`.\n\n### Installation\n1. Download \`Meth.zip\`\n2. Unzip and drag \`Meth.app\` into \`/Applications\`\n3. Launch Meth from Applications."
+          set -euo pipefail
+          git fetch origin --tags --force
+          target_sha="${GITHUB_SHA}"
 
-          # Delete existing release for the rolling tag if present to replace assets cleanly
-          gh release delete rolling -y || true
+          if git rev-parse -q --verify refs/tags/rolling >/dev/null 2>&1; then
+            current_sha="$(git rev-parse refs/tags/rolling)"
+            if [ "${current_sha}" = "${target_sha}" ]; then
+              echo "rolling already points at ${target_sha}; re-publishing in place."
+            elif git merge-base --is-ancestor "${current_sha}" "${target_sha}"; then
+              echo "Advancing rolling from ${current_sha} to ${target_sha}."
+            else
+              echo "Refusing to update rolling: current target ${current_sha} is not an ancestor of ${target_sha}." >&2
+              exit 1
+            fi
+          else
+            echo "No existing rolling tag; this will be the first release."
+          fi
 
-          # Create fresh release for rolling tag with asset
-          gh release create rolling dist/Meth.zip \
-            --title "${RELEASE_TITLE}" \
-            --notes "${RELEASE_NOTES}" \
-            --prerelease
+      - name: Prepare release notes
+        run: |
+          {
+            echo "# Latest Meth Development Build"
+            echo
+            echo "This is the latest rolling development build of **Meth**, built directly from \`main\`."
+            echo
+            echo "- **Commit:** [\`${GITHUB_SHA::7}\`](${{ github.server_url }}/${{ github.repository }}/commit/${GITHUB_SHA})"
+            echo "- **Workflow run:** [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            echo "- **Build date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            echo
+            echo "### Download"
+            echo
+            echo "- \`Meth.zip\` — Universal (Apple Silicon + Intel) macOS application bundle"
+            echo
+            echo "> [!NOTE]"
+            echo "> This is a continuously updated development build. It is ad-hoc signed and is not notarized."
+          } > release_notes.md
+
+      - name: Publish or update the rolling release
+        run: |
+          set -euo pipefail
+          target_sha="${GITHUB_SHA}"
+
+          if gh release view rolling --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "rolling release already exists; updating it in place."
+          else
+            echo "Creating rolling release for the first time (as a draft until the asset is uploaded)."
+            gh release create rolling \
+              --repo "${{ github.repository }}" \
+              --draft \
+              --target "${target_sha}" \
+              --title "Latest Development Build" \
+              --notes-file release_notes.md
+          fi
+
+          # Replace the asset in place; the release stays available throughout.
+          gh release upload rolling dist/Meth.zip --repo "${{ github.repository }}" --clobber
+
+          # Move the tag only after the new asset is confirmed uploaded above.
+          git tag -f rolling "${target_sha}"
+          git push origin refs/tags/rolling --force
+
+          gh release edit rolling \
+            --repo "${{ github.repository }}" \
+            --draft=false \
+            --latest \
+            --title "Latest Development Build" \
+            --notes-file release_notes.md
+
+      - name: Verify final release state
+        run: |
+          set -euo pipefail
+          target_sha="${GITHUB_SHA}"
+          actual_tag_sha="$(git rev-parse refs/tags/rolling)"
+          if [ "${actual_tag_sha}" != "${target_sha}" ]; then
+            echo "rolling tag points at ${actual_tag_sha}, expected ${target_sha}." >&2
+            exit 1
+          fi
+
+          view_json="$(gh release view rolling --repo "${{ github.repository }}" --json tagName,isDraft,isPrerelease,assets)"
+          tag_name="$(echo "${view_json}" | jq -r '.tagName')"
+          is_draft="$(echo "${view_json}" | jq -r '.isDraft')"
+          is_prerelease="$(echo "${view_json}" | jq -r '.isPrerelease')"
+          has_asset="$(echo "${view_json}" | jq -r '([.assets[].name] | index("Meth.zip")) != null')"
+
+          if [ "${tag_name}" != "rolling" ] || [ "${is_draft}" != "false" ] || [ "${is_prerelease}" != "false" ] || [ "${has_asset}" != "true" ]; then
+            echo "Release verification failed: tag=${tag_name} draft=${is_draft} prerelease=${is_prerelease} has_Meth.zip=${has_asset}" >&2
+            exit 1
+          fi
+          echo "Verified: tag=rolling, draft=false, prerelease=false, Meth.zip present, commit=${target_sha}"

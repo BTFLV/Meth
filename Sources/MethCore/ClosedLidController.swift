@@ -3,15 +3,39 @@ import os.log
 
 private let logger = Logger(subsystem: "com.meth.app", category: "ClosedLidController")
 
-public final class ClosedLidController: @unchecked Sendable {
-    private let lock = NSLock()
+/// Owns the Closed-Lid Mode lifecycle: the privileged `SleepDisabled` mechanism, lid/power
+/// monitoring, and the crash-recovery watchdog.
+///
+/// This type is an `actor` rather than a lock-guarded class so that:
+/// - activation and deactivation are mutually exclusive by construction (no explicit
+///   locking is needed, and there is no way for two privileged mutations to overlap);
+/// - the blocking `Process`/AppleScript calls made by `ClosedLidPrivilegedManaging` run on
+///   the actor's own executor, off the caller's (typically `@MainActor`) thread, without
+///   any manual `DispatchQueue` juggling.
+public actor ClosedLidController {
+    public enum State: Equatable, Sendable {
+        case inactive
+        case activating
+        case active
+        case deactivating
+    }
+
     private let privilegedService: any ClosedLidPrivilegedManaging
     private let lidMonitor: any LidStateMonitoring
     private let powerMonitor: any PowerSourceMonitoring
     private let watchdogClient: WatchdogClient
 
-    private var isActive = false
-    public var onLowBatteryCutoff: (@Sendable () -> Void)?
+    private var state: State = .inactive
+
+    /// Invoked when a low-battery safety cutoff stops an active session. Fire-and-forget
+    /// by design; the receiver is expected to hop back to its own isolation if needed.
+    private var onLowBatteryCutoff: (@Sendable () -> Void)?
+
+    /// Invoked when Closed-Lid Mode can no longer guarantee protection while a session is
+    /// still nominally active (for example, support was removed or reassertion failed
+    /// repeatedly). The controller deactivates itself before calling this so the caller
+    /// never has to reconcile "active" state with a mechanism that has already failed.
+    private var onIntegrityFailure: (@Sendable (String) -> Void)?
 
     public init(
         privilegedService: any ClosedLidPrivilegedManaging = ClosedLidPrivilegedService.shared,
@@ -24,108 +48,156 @@ public final class ClosedLidController: @unchecked Sendable {
         self.powerMonitor = powerMonitor
         self.watchdogClient = watchdogClient
 
-        setupCallbacks()
+        lidMonitor.onLidStateChange = { [weak self] state in
+            guard let self else { return }
+            Task { await self.handleLidStateChange(state) }
+        }
+        powerMonitor.onPowerSourceChange = { [weak self] state in
+            guard let self else { return }
+            Task { await self.handlePowerSourceChange(state) }
+        }
     }
 
     deinit {
-        deactivate()
+        watchdogClient.stop()
+        lidMonitor.stopMonitoring()
+        powerMonitor.stopMonitoring()
+    }
+
+    public var currentState: State {
+        state
     }
 
     public var isClosedLidActive: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return isActive
+        state == .active
     }
 
-    public func activate(timeoutSeconds: Int? = nil) throws {
-        lock.lock()
-        defer { lock.unlock() }
+    public func supportStatus() -> ClosedLidSupportStatus {
+        privilegedService.supportStatus()
+    }
 
-        guard !isActive else {
-            // Update watchdog timeout if already active
+    public func setLowBatteryCutoffHandler(_ handler: @escaping @Sendable () -> Void) {
+        onLowBatteryCutoff = handler
+    }
+
+    public func setIntegrityFailureHandler(_ handler: @escaping @Sendable (String) -> Void) {
+        onIntegrityFailure = handler
+    }
+
+    /// Activates Closed-Lid Mode. Throws (without mutating any state) if support is not
+    /// installed or the privileged mutation fails, so callers never observe a session that
+    /// claims Closed-Lid protection when the underlying mechanism did not actually engage.
+    public func activate(timeoutSeconds: Int? = nil) throws {
+        switch state {
+        case .active, .activating:
             watchdogClient.start(timeoutSeconds: timeoutSeconds)
             return
+        case .deactivating:
+            throw ClosedLidError.activeSessionInProgress
+        case .inactive:
+            break
         }
 
-        guard privilegedService.isSupportInstalled else {
+        state = .activating
+
+        // Check support up front so the common "not installed" failure never spawns and
+        // immediately kills a watchdog process for nothing.
+        guard privilegedService.supportStatus() == .installed else {
+            state = .inactive
             throw ClosedLidError.supportNotInstalled
         }
 
-        try privilegedService.enableSleepDisabled()
+        // Arm the watchdog before mutating SleepDisabled: if Meth crashes in the narrow
+        // window right after enabling sleep, the watchdog is already watching and can
+        // still recover, instead of depending solely on the next app launch.
         watchdogClient.start(timeoutSeconds: timeoutSeconds)
+
+        do {
+            try privilegedService.enableSleepDisabled()
+        } catch {
+            watchdogClient.stop()
+            state = .inactive
+            throw error
+        }
+
         lidMonitor.startMonitoring()
         powerMonitor.startMonitoring()
-        isActive = true
+        state = .active
         logger.info("Closed-Lid Mode successfully activated.")
     }
 
     public func deactivate() {
-        lock.lock()
-        defer { lock.unlock() }
+        guard state == .active || state == .activating else { return }
+        state = .deactivating
 
-        guard isActive else { return }
-        isActive = false
-
-        watchdogClient.stop()
         lidMonitor.stopMonitoring()
         powerMonitor.stopMonitoring()
 
         do {
             try privilegedService.disableSleepDisabled()
             logger.info("Closed-Lid Mode deactivated and SleepDisabled reverted.")
+            // Only torn down once restoration actually succeeded: if it failed, the
+            // watchdog is left running as a continued safety net rather than removing the
+            // one thing that might still recover the Mac later.
+            watchdogClient.stop()
         } catch {
             logger.error("Error reverting SleepDisabled: \(error.localizedDescription)")
         }
+        state = .inactive
     }
 
-    private func setupCallbacks() {
-        lidMonitor.onLidStateChange = { [weak self] state in
-            self?.handleLidStateChange(state)
+    /// Removing privileged support must never be allowed to happen underneath an active
+    /// session, or the UI would keep claiming protection that no longer exists.
+    public func uninstallSupport() throws {
+        guard state == .inactive else {
+            throw ClosedLidError.activeSessionInProgress
         }
-
-        powerMonitor.onPowerSourceChange = { [weak self] state in
-            self?.handlePowerSourceChange(state)
-        }
+        try privilegedService.uninstallSupport()
     }
 
-    private func handleLidStateChange(_ state: LidState) {
-        lock.lock()
-        let active = isActive
-        lock.unlock()
+    public func installSupport() throws {
+        try privilegedService.installSupport()
+    }
 
-        guard active else { return }
+    private func handleLidStateChange(_ newState: LidState) {
+        guard state == .active else { return }
 
-        logger.info("Handling lid state transition: \(state.rawValue)")
-        if state == .closed {
-            // When lid closes, immediately put internal display to sleep to eliminate backlight heat and power
+        logger.info("Handling lid state transition: \(newState.rawValue)")
+        if newState == .closed {
+            // Put the internal display to sleep immediately: it has no reason to stay lit
+            // once the lid is shut, and doing so avoids wasted power and backlight heat.
             privilegedService.putDisplayToSleep()
         }
     }
 
-    private func handlePowerSourceChange(_ state: PowerSourceState) {
-        lock.lock()
-        let active = isActive
-        lock.unlock()
+    private func handlePowerSourceChange(_ newState: PowerSourceState) {
+        guard state == .active else { return }
 
-        guard active else { return }
+        logger.info("Handling power source transition: AC=\(newState.hasExternalPower), Battery=\(String(describing: newState.batteryLevel))%, Low=\(newState.isLowBattery)")
 
-        logger.info("Handling power source transition: AC=\(state.hasExternalPower), Battery=\(String(describing: state.batteryLevel))%, Low=\(state.isLowBattery)")
-
-        // Check for low battery cutoff
-        if state.isLowBattery {
+        if newState.isLowBattery {
             logger.warning("Battery reached low threshold while in Closed-Lid Mode. Triggering safety cutoff.")
             deactivate()
-            DispatchQueue.main.async { [weak self] in
-                self?.onLowBatteryCutoff?()
-            }
+            onLowBatteryCutoff?()
             return
         }
 
-        // Handle Apple Silicon power transition: ensure SleepDisabled was not reset by kernel
-        if !privilegedService.isSleepDisabled() {
-            logger.info("Re-asserting SleepDisabled across power source transition.")
-            try? privilegedService.enableSleepDisabled()
+        // Apple Silicon's powerd can clear SleepDisabled across certain power source
+        // transitions; re-assert it while we are definitively still active.
+        guard !privilegedService.isSleepDisabled() else { return }
+
+        logger.info("Re-asserting SleepDisabled across power source transition.")
+        do {
+            try privilegedService.enableSleepDisabled()
+        } catch {
+            logger.error("Failed to re-assert SleepDisabled after power source change: \(error.localizedDescription)")
+            if privilegedService.supportStatus() != .installed {
+                // Support disappeared out from under an active session: fail safe instead
+                // of silently continuing to claim Closed-Lid protection.
+                let reason = "Closed-Lid support became unavailable while a session was active."
+                deactivate()
+                onIntegrityFailure?(reason)
+            }
         }
     }
 }
-

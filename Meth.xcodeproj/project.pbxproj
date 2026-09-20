@@ -10,6 +10,7 @@
 		083569DD8298356A1CC4079A /* LidStateMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13702A8D7E2A812AF9BD5E5A /* LidStateMonitor.swift */; };
 		0BCBAE5440498343252B1CD5 /* SessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24801E506F4ED69D1794FDC7 /* SessionTests.swift */; };
 		112D26D97EFB204FB656D7BE /* WatchdogClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82FD92B6077FB4C064725C3A /* WatchdogClient.swift */; };
+		21372C6E1A5EAAB4D7B316FE /* libMethCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = FC38B24B46269C5D46DA47E0 /* libMethCore.a */; };
 		2B73BF0A500D69263A8EBAC8 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA769E8B692D9161A9370A81 /* MenuBarController.swift */; };
 		4277C74EFCA4E0801B30817C /* SessionManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7782DF7DFC7AEF7676FA65 /* SessionManagerTests.swift */; };
 		432441B423244F620E1717C5 /* PowerSourceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8443921F24F63AC93D6424 /* PowerSourceMonitor.swift */; };
@@ -19,10 +20,12 @@
 		5788C138C086383D11FDB06F /* MethApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02F66685B847D64FE27006CF /* MethApp.swift */; };
 		59088E8E371AD9DED0A34C0B /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D3226DB1A30E1F1E0D7A04 /* Session.swift */; };
 		71C6523466C8C6A5975D37D8 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 399CD2266FFFC59111711E23 /* AppDelegate.swift */; };
+		7BFC556B01D2816A52F8A1E6 /* WatchdogClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97FE010A40CF2BC1A2557E15 /* WatchdogClientTests.swift */; };
 		7C8BEF24E4529A190149E426 /* ClosedLidPrivilegedManaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B15EBB0BC9C24DE94D06AE6 /* ClosedLidPrivilegedManaging.swift */; };
 		80BBB4D018CD1A314E48AB46 /* SessionDuration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CAAB279320D53E6AA442D02 /* SessionDuration.swift */; };
 		87F9575AFFD7562862655CFC /* libMethCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = FC38B24B46269C5D46DA47E0 /* libMethCore.a */; };
 		8BF0D3DE75548D71384456A0 /* Mocks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89C25C38274CFC4BBD518EF9 /* Mocks.swift */; };
+		A050F343C0B014336DF5BD96 /* ClosedLidPrivilegedServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1BA9A3D650514BC0BB73EAA /* ClosedLidPrivilegedServiceTests.swift */; };
 		B1F6CC3A568D23F689E6EE0C /* libMethCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = FC38B24B46269C5D46DA47E0 /* libMethCore.a */; };
 		B86ACF36408E47FBC4507C98 /* LidStateMonitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CACE8205D6E8EBDC3B511B1 /* LidStateMonitoring.swift */; };
 		B86BB2A72A58E77343D71616 /* ClosedLidControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07AD0346636289B23F4645B6 /* ClosedLidControllerTests.swift */; };
@@ -34,12 +37,18 @@
 		E370243F2D80709B24CA4021 /* PowerAssertionManaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 364149AB355204C4D610122E /* PowerAssertionManaging.swift */; };
 		E6C44BADA3F6608B63D842FF /* SessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F73B409CD68C78132AB7849 /* SessionManager.swift */; };
 		E6E268B86D32AFC79BF98EC1 /* PowerAssertion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F45DECEC1EDFA1C631B4F5 /* PowerAssertion.swift */; };
-		EA02363E193F84834BEDFE8F /* TestCompat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45415312BB6BD1A5D4A67606 /* TestCompat.swift */; };
 		EC47E565D87D7B2FA546A93A /* MenuBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C969499491A8CE5F2D4D2C /* MenuBarIcon.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
 		5A31A25DB87AAD68C86C1556 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EF08953597F308DD9AB48C98 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 31DC03EACC4D0D26320CB56D;
+			remoteInfo = MethCore;
+		};
+		92D5802C90F5606C35A89212 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = EF08953597F308DD9AB48C98 /* Project object */;
 			proxyType = 1;
@@ -74,18 +83,19 @@
 		3CACE8205D6E8EBDC3B511B1 /* LidStateMonitoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LidStateMonitoring.swift; sourceTree = "<group>"; };
 		3F73B409CD68C78132AB7849 /* SessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManager.swift; sourceTree = "<group>"; };
 		42D3226DB1A30E1F1E0D7A04 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
-		45415312BB6BD1A5D4A67606 /* TestCompat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestCompat.swift; sourceTree = "<group>"; };
 		5B77942C01CF7B4A0A27B3FC /* MethWatchdog */ = {isa = PBXFileReference; includeInIndex = 0; path = MethWatchdog; sourceTree = BUILT_PRODUCTS_DIR; };
 		5EB56F2D4949E4CF09605BDA /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		82FD92B6077FB4C064725C3A /* WatchdogClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchdogClient.swift; sourceTree = "<group>"; };
 		89356D866FACF9D7643AF208 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		89C25C38274CFC4BBD518EF9 /* Mocks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mocks.swift; sourceTree = "<group>"; };
 		8B8443921F24F63AC93D6424 /* PowerSourceMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerSourceMonitor.swift; sourceTree = "<group>"; };
+		97FE010A40CF2BC1A2557E15 /* WatchdogClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchdogClientTests.swift; sourceTree = "<group>"; };
 		B1C969499491A8CE5F2D4D2C /* MenuBarIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarIcon.swift; sourceTree = "<group>"; };
 		BA769E8B692D9161A9370A81 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
 		C0F45DECEC1EDFA1C631B4F5 /* PowerAssertion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerAssertion.swift; sourceTree = "<group>"; };
 		DB5D9248C0C20C95189699B3 /* ClosedLidController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClosedLidController.swift; sourceTree = "<group>"; };
 		DD674486B875B1DEDCEFEA86 /* Meth.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Meth.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E1BA9A3D650514BC0BB73EAA /* ClosedLidPrivilegedServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClosedLidPrivilegedServiceTests.swift; sourceTree = "<group>"; };
 		EE7782DF7DFC7AEF7676FA65 /* SessionManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManagerTests.swift; sourceTree = "<group>"; };
 		FC38B24B46269C5D46DA47E0 /* libMethCore.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libMethCore.a; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -96,6 +106,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				87F9575AFFD7562862655CFC /* libMethCore.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		36A505F7E4E31CEB51D99E53 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				21372C6E1A5EAAB4D7B316FE /* libMethCore.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -174,11 +192,12 @@
 			isa = PBXGroup;
 			children = (
 				07AD0346636289B23F4645B6 /* ClosedLidControllerTests.swift */,
+				E1BA9A3D650514BC0BB73EAA /* ClosedLidPrivilegedServiceTests.swift */,
 				0A2DDCA755DE9FD46C58E4D4 /* FailsafeRecoveryTests.swift */,
 				89C25C38274CFC4BBD518EF9 /* Mocks.swift */,
 				EE7782DF7DFC7AEF7676FA65 /* SessionManagerTests.swift */,
 				24801E506F4ED69D1794FDC7 /* SessionTests.swift */,
-				45415312BB6BD1A5D4A67606 /* TestCompat.swift */,
+				97FE010A40CF2BC1A2557E15 /* WatchdogClientTests.swift */,
 			);
 			name = MethTests;
 			path = Tests/MethTests;
@@ -224,10 +243,12 @@
 			buildConfigurationList = 8DF8861CE32BBD2D7F3054CE /* Build configuration list for PBXNativeTarget "MethWatchdog" */;
 			buildPhases = (
 				3A45AA866FC41E7548AEB0D9 /* Sources */,
+				36A505F7E4E31CEB51D99E53 /* Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				9159CB8BEBAA55A23C440F86 /* PBXTargetDependency */,
 			);
 			name = MethWatchdog;
 			packageProductDependencies = (
@@ -392,11 +413,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				B86BB2A72A58E77343D71616 /* ClosedLidControllerTests.swift in Sources */,
+				A050F343C0B014336DF5BD96 /* ClosedLidPrivilegedServiceTests.swift in Sources */,
 				E26E9BAD4E04072681C2AEB0 /* FailsafeRecoveryTests.swift in Sources */,
 				8BF0D3DE75548D71384456A0 /* Mocks.swift in Sources */,
 				4277C74EFCA4E0801B30817C /* SessionManagerTests.swift in Sources */,
 				0BCBAE5440498343252B1CD5 /* SessionTests.swift in Sources */,
-				EA02363E193F84834BEDFE8F /* TestCompat.swift in Sources */,
+				7BFC556B01D2816A52F8A1E6 /* WatchdogClientTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -412,6 +434,11 @@
 			isa = PBXTargetDependency;
 			target = 31DC03EACC4D0D26320CB56D /* MethCore */;
 			targetProxy = 5A31A25DB87AAD68C86C1556 /* PBXContainerItemProxy */;
+		};
+		9159CB8BEBAA55A23C440F86 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 31DC03EACC4D0D26320CB56D /* MethCore */;
+			targetProxy = 92D5802C90F5606C35A89212 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -546,6 +573,10 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.meth.watchdog;
 				PRODUCT_NAME = MethWatchdog;
 				SDKROOT = macosx;
@@ -560,6 +591,10 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.meth.watchdog;
 				PRODUCT_NAME = MethWatchdog;

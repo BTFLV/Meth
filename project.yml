@@ -53,6 +53,8 @@ targets:
     platform: macOS
     sources:
       - Sources/MethWatchdog
+    dependencies:
+      - target: MethCore
     settings:
       base:
         PRODUCT_NAME: MethWatchdog

@@ -1,7 +1,5 @@
 import Foundation
-#if canImport(XCTest)
 import XCTest
-#endif
 @testable import MethCore
 
 final class ClosedLidControllerTests: XCTestCase {
@@ -19,51 +17,103 @@ final class ClosedLidControllerTests: XCTestCase {
         controller = ClosedLidController(
             privilegedService: mockPrivileged,
             lidMonitor: mockLid,
-            powerMonitor: mockSource
+            powerMonitor: mockSource,
+            watchdogClient: makeIsolatedWatchdogClient()
         )
     }
 
-    override func tearDown() {
-        controller.deactivate()
-        super.tearDown()
+    override func tearDown() async throws {
+        await controller.deactivate()
+        try await super.tearDown()
     }
 
-    func testActivationAndDeactivationLifecycle() throws {
-        XCTAssertFalse(controller.isClosedLidActive)
+    func testActivationAndDeactivationLifecycle() async throws {
+        var active = await controller.isClosedLidActive
+        XCTAssertFalse(active)
         XCTAssertFalse(mockLid.isMonitoring)
         XCTAssertFalse(mockSource.isMonitoring)
 
-        try controller.activate(timeoutSeconds: 300)
-        XCTAssertTrue(controller.isClosedLidActive)
+        try await controller.activate(timeoutSeconds: 300)
+        active = await controller.isClosedLidActive
+        XCTAssertTrue(active)
         XCTAssertTrue(mockPrivileged.sleepDisabled)
         XCTAssertTrue(mockLid.isMonitoring)
         XCTAssertTrue(mockSource.isMonitoring)
 
-        controller.deactivate()
-        XCTAssertFalse(controller.isClosedLidActive)
+        await controller.deactivate()
+        active = await controller.isClosedLidActive
+        XCTAssertFalse(active)
         XCTAssertFalse(mockPrivileged.sleepDisabled)
         XCTAssertFalse(mockLid.isMonitoring)
         XCTAssertFalse(mockSource.isMonitoring)
     }
 
-    func testLidCloseTriggersDisplaySleep() throws {
-        try controller.activate()
+    func testFailedActivationLeavesNoStaleActiveState() async {
+        mockPrivileged.status = .notInstalled
+
+        do {
+            try await controller.activate()
+            XCTFail("Expected activation to throw")
+        } catch {
+            XCTAssertEqual(error as? ClosedLidError, .supportNotInstalled)
+        }
+
+        let active = await controller.isClosedLidActive
+        XCTAssertFalse(active)
+        let state = await controller.currentState
+        XCTAssertEqual(state, .inactive)
+        XCTAssertFalse(mockLid.isMonitoring)
+        XCTAssertFalse(mockSource.isMonitoring)
+    }
+
+    func testActivationImmediatelyFollowedByStopLeavesConsistentState() async throws {
+        try await controller.activate()
+        await controller.deactivate()
+
+        let active = await controller.isClosedLidActive
+        XCTAssertFalse(active)
+        XCTAssertFalse(mockPrivileged.sleepDisabled)
+    }
+
+    func testUninstallSupportIsRejectedWhileSessionActive() async throws {
+        try await controller.activate()
+
+        do {
+            try await controller.uninstallSupport()
+            XCTFail("Expected uninstall to be rejected while active")
+        } catch {
+            XCTAssertEqual(error as? ClosedLidError, .activeSessionInProgress)
+        }
+
+        // The underlying privileged uninstall must never have been reached.
+        XCTAssertEqual(mockPrivileged.supportStatus(), .installed)
+    }
+
+    func testUninstallSupportSucceedsWhileInactive() async throws {
+        try await controller.uninstallSupport()
+        XCTAssertEqual(mockPrivileged.supportStatus(), .notInstalled)
+    }
+
+    func testLidCloseTriggersDisplaySleep() async throws {
+        try await controller.activate()
         XCTAssertEqual(mockPrivileged.displaySleepTriggeredCount, 0)
 
         // Simulate closing the laptop lid
         mockLid.triggerStateChange(.closed)
+        try await Task.sleep(for: .milliseconds(50))
 
         XCTAssertEqual(mockPrivileged.displaySleepTriggeredCount, 1)
     }
 
-    func testLowBatteryTriggersSafetyCutoff() throws {
+    func testLowBatteryTriggersSafetyCutoff() async throws {
         let expectation = expectation(description: "Low battery cutoff callback")
-        controller.onLowBatteryCutoff = {
+        await controller.setLowBatteryCutoffHandler {
             expectation.fulfill()
         }
 
-        try controller.activate()
-        XCTAssertTrue(controller.isClosedLidActive)
+        try await controller.activate()
+        var active = await controller.isClosedLidActive
+        XCTAssertTrue(active)
 
         // Simulate battery dropping to 8% without AC power
         let lowBatteryState = PowerSourceState(
@@ -74,13 +124,14 @@ final class ClosedLidControllerTests: XCTestCase {
         )
         mockSource.triggerPowerChange(lowBatteryState)
 
-        wait(for: [expectation], timeout: 1.0)
-        XCTAssertFalse(controller.isClosedLidActive)
+        await fulfillment(of: [expectation], timeout: 1.0)
+        active = await controller.isClosedLidActive
+        XCTAssertFalse(active)
         XCTAssertFalse(mockPrivileged.sleepDisabled)
     }
 
-    func testAppleSiliconPowerSourceTransitionReEnforcesSleepDisabled() throws {
-        try controller.activate()
+    func testAppleSiliconPowerSourceTransitionReEnforcesSleepDisabled() async throws {
+        try await controller.activate()
         XCTAssertTrue(mockPrivileged.sleepDisabled)
 
         // Simulate macOS powerd clearing SleepDisabled during AC unplug
@@ -94,9 +145,31 @@ final class ClosedLidControllerTests: XCTestCase {
             isLowBattery: false
         )
         mockSource.triggerPowerChange(batteryState)
+        try await Task.sleep(for: .milliseconds(50))
 
         // Controller should detect that SleepDisabled was dropped and re-enable it
         XCTAssertTrue(mockPrivileged.sleepDisabled)
         XCTAssertEqual(mockPrivileged.enableCallsCount, 2)
+    }
+
+    func testPowerSourceReassertionFailureAfterSupportRemovalStopsSession() async throws {
+        try await controller.activate()
+
+        let expectation = expectation(description: "Integrity failure callback")
+        await controller.setIntegrityFailureHandler { _ in
+            expectation.fulfill()
+        }
+
+        // Simulate support being removed out from under an active session, and the kernel
+        // having cleared the flag independently.
+        mockPrivileged.sleepDisabled = false
+        mockPrivileged.status = .notInstalled
+
+        let batteryState = PowerSourceState(hasExternalPower: true, isCharging: true, batteryLevel: 90, isLowBattery: false)
+        mockSource.triggerPowerChange(batteryState)
+
+        await fulfillment(of: [expectation], timeout: 1.0)
+        let active = await controller.isClosedLidActive
+        XCTAssertFalse(active, "A reassertion failure with support gone must not leave the session claiming to be active.")
     }
 }

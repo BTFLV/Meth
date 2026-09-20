@@ -43,6 +43,14 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
                 self?.updateRemainingTimeItem()
             }
             .store(in: &cancellables)
+
+        sessionManager.$lastAutomaticStopReason
+            .receive(on: RunLoop.main)
+            .compactMap { $0 }
+            .sink { [weak self] reason in
+                self?.presentAutomaticStopAlert(reason: reason)
+            }
+            .store(in: &cancellables)
     }
 
     private func updateIcon() {
@@ -214,16 +222,27 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func proceedWithStart(duration: SessionDuration) {
-        do {
-            try sessionManager.startSession(duration: duration)
-        } catch ClosedLidError.supportNotInstalled {
-            showSupportRequiredAlert()
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = "Failed to start session"
-            alert.informativeText = error.localizedDescription
-            alert.runModal()
+        Task { @MainActor in
+            do {
+                try await sessionManager.startSession(duration: duration)
+            } catch ClosedLidError.supportNotInstalled {
+                showSupportRequiredAlert()
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "Failed to start session"
+                alert.informativeText = errorSummary(for: error)
+                alert.runModal()
+            }
         }
+    }
+
+    /// Standardizes what a failure explains to the user: what failed, whether the Mac is
+    /// still protected, and what to do next -- without exposing raw shell command text.
+    private func errorSummary(for error: Error) -> String {
+        if error is ClosedLidError {
+            return "Closed-Lid Mode could not be enabled. Normal keep-awake protection was not started, so no partially active session was left running.\n\nReinstall Closed-Lid Support in Settings and try again."
+        }
+        return error.localizedDescription
     }
 
     private func showSupportRequiredAlert() {
@@ -233,20 +252,34 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         alert.addButton(withTitle: "Open Settings")
         alert.addButton(withTitle: "Cancel")
         if alert.runModal() == .alertFirstButtonReturn {
-            SettingsWindowController.show()
+            openSettings()
         }
     }
 
+    private func presentAutomaticStopAlert(reason: String) {
+        sessionManager.clearLastAutomaticStopReason()
+        let alert = NSAlert()
+        alert.messageText = "Session Stopped Automatically"
+        alert.informativeText = reason
+        alert.runModal()
+    }
+
     @objc private func stopSession() {
-        sessionManager.stopSession()
+        Task { @MainActor in
+            await sessionManager.stopSession()
+        }
     }
 
     @objc private func extend15Min() {
-        sessionManager.extendSession(by: SessionDuration.fifteenMinutes)
+        Task { @MainActor in
+            await sessionManager.extendSession(by: SessionDuration.fifteenMinutes)
+        }
     }
 
     @objc private func extend60Min() {
-        sessionManager.extendSession(by: SessionDuration.oneHour)
+        Task { @MainActor in
+            await sessionManager.extendSession(by: SessionDuration.oneHour)
+        }
     }
 
     @objc private func toggleDisplaySleep() {
@@ -273,11 +306,15 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func openSettings() {
-        SettingsWindowController.show()
+        // Uses the standard Settings-scene action so there is exactly one settings window
+        // implementation; this works for `.accessory` apps even without a visible app menu.
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
     }
 
     @objc private func quitApp() {
-        sessionManager.stopSession()
+        // Cleanup happens in `applicationShouldTerminate`, which defers termination until
+        // the async session teardown actually completes.
         NSApp.terminate(nil)
     }
 }

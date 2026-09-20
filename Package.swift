@@ -24,6 +24,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "MethWatchdog",
+            dependencies: ["MethCore"],
             path: "Sources/MethWatchdog"
         ),
         .testTarget(

@@ -1,122 +1,158 @@
 # Meth
 
-Meth is a lightweight, native macOS menu bar utility designed to control system sleep and prevent unexpected sleep interruptions.
-
-Its primary differentiator is an explicit, reliable **Closed-Lid Mode**. While standard macOS sleep assertions prevent idle sleep when a laptop is open, they do not prevent sleep when the MacBook lid is closed. Meth provides a dedicated mechanism to keep long-running tasks—such as software builds, large downloads, remote SSH sessions, local web or database servers, and background processes—active when the lid is closed.
+Meth is a lightweight, native macOS menu bar utility for controlling system sleep. Its
+defining feature is **Closed-Lid Mode**: ordinary "keep awake" tools only prevent *idle*
+sleep, not the sleep macOS triggers when the lid is closed. Meth adds a dedicated,
+narrowly-scoped mechanism specifically for that case, so long-running work — builds,
+downloads, remote sessions, local servers — can keep running with the lid shut.
 
 Meth is not affiliated with Amphetamine.
 
 ---
 
-## Capabilities
+## Features
 
-Meth separates power management into distinct modes rather than treating all sleep states identically:
-
-### 1. Normal Keep Awake Mode
-Uses native macOS IOKit power management assertions (`kIOPMAssertPreventUserIdleSystemSleep` and `kIOPMAssertPreventUserIdleDisplaySleep`) to prevent the Mac from entering idle sleep during inactive periods.
-- **Session Durations**: Indefinitely, 5 minutes, 15 minutes, 30 minutes, 1 hour, 2 hours, 4 hours, 8 hours, or Until a specific time (e.g., Until 23:00).
-- **Display Sleep Option**: By default, "Allow Display Sleep" is enabled so that internal and external displays can turn off on their idle timers while the system continues running. Users can uncheck this option to force displays to stay on.
-
-### 2. Closed-Lid Mode
-Closing the MacBook lid triggers a hardware clamshell signal that bypasses standard idle power assertions. Closed-Lid Mode engages a system-level override to keep user processes running even with the lid shut.
-- **Internal Display Behavior**: Closing the lid immediately powers down the internal LCD panel backlight, avoiding wasted power and display heat.
-- **Power Source Resilience**: Maintains active state across power adapter connect and disconnect events on Apple Silicon.
-- **Battery Safety Cutoff**: Automatically deactivates and restores default sleep behavior if the battery drops to 10% or below on battery power, protecting the system from emergency hardware shutoffs.
-- **Session Restoration**: Safely restores normal sleep settings when the session stops, the timer expires, the app quits, or a session is replaced.
+- **Normal Keep Awake sessions** — indefinite, or for a fixed duration (5 minutes up to
+  8 hours), using standard IOKit power assertions.
+- **Until sessions** — stay awake until a specific clock time (e.g. "Until 23:00").
+- **Display sleep control** — optionally let the display sleep on its own schedule while
+  the system stays awake.
+- **Closed-Lid Mode** — keeps the Mac running with the lid closed, with an automatic
+  low-battery safety cutoff and a crash-recovery watchdog (see below).
+- **Launch at Login**, backed by `SMAppService`.
 
 ---
 
-## Thermal and Safety Considerations
+## Closed-Lid Mode
 
-> **Warning:**
-> Closed-Lid Mode keeps the Mac processor, memory, and fans active while the lid is closed. This increases battery consumption and generates heat.
-> 
-> **Never place an actively running closed MacBook into an enclosed bag, backpack, sleeve, or unventilated space.** Keep the laptop on a flat, solid surface with adequate ventilation around the exhaust vents.
+Standard macOS idle-sleep assertions (`kIOPMAssertPreventUserIdleSystemSleep`,
+`kIOPMAssertPreventUserIdleDisplaySleep`) and tools built on them, such as `caffeinate`,
+do **not** prevent sleep triggered by closing the lid. Overriding that requires a
+different, privileged mechanism: the kernel's `SleepDisabled` parameter, toggled via
+`pmset -a disablesleep`.
+
+Because this requires administrator privileges, Meth uses the narrowest mechanism that
+gets the job done:
+
+- The app itself **never runs as root** and has **no background daemon or helper
+  process** that runs continuously.
+- Administrator authentication is requested **once**, to install a drop-in `sudoers.d`
+  rule that permits only two exact commands, with no wildcards:
+  `pmset -a disablesleep 0` and `pmset -a disablesleep 1`.
+- After that one-time setup, enabling and disabling Closed-Lid Mode runs those two fixed
+  commands via `sudo -n`, with no further prompts.
+- Support can be removed at any time from Settings, which restores normal sleep behavior
+  first, then removes the rule and verifies both steps succeeded.
+- Closed-Lid support cannot be removed while a Closed-Lid session is currently relying on
+  it; stop the session first.
+
+**Crash and stale-state recovery.** If Meth is killed unexpectedly, a small independent
+watchdog process (spawned only while Closed-Lid Mode is active) detects the exit via a
+kernel `kqueue` event and restores normal sleep behavior, retrying a bounded number of
+times with backoff and verifying the result. On every launch, Meth also checks for a
+`SleepDisabled=1` state left over from an ungraceful shutdown — but only reverts it if
+Meth's own records indicate *it* was the one that enabled it. If `SleepDisabled` is
+already enabled for some other reason (another tool, or an administrator), Meth leaves it
+untouched rather than guessing. Meth attempts to restore normal sleep behavior after
+crashes using this watchdog and startup check; it cannot guarantee recovery in every
+conceivable failure mode (for example, if the privileged rule itself becomes unusable at
+the exact moment recovery is attempted), but every reasonable failure path is covered.
+
+**Thermal and battery safety.** Closed-Lid Mode keeps the CPU, memory, and fans active
+with the lid shut, which increases heat and battery use. Meth does not override macOS's
+own critical-battery or thermal-emergency behavior, and automatically stops a Closed-Lid
+session if the battery drops to 10% or below on battery power. Never place an actively
+running, closed MacBook in an enclosed bag or unventilated space.
 
 ---
 
-## Security Model and Privileged State
+## Security model
 
-Standard macOS power management does not permit unprivileged user applications to override lid-closed sleep. Modifying this behavior requires toggling the kernel's `SleepDisabled` parameter via `/usr/bin/pmset -a disablesleep`.
-
-To maintain the principle of least privilege:
-1. **The application never runs as root.** Meth runs strictly as an unprivileged user process.
-2. **No permanent daemons or open-ended privileges.** Meth does not install persistent root daemons or background network agents.
-3. **Narrowly Scoped Sudoers Rule**: Administrator authentication is requested once during setup to install a drop-in configuration file at:
-   ```text
-   /private/etc/sudoers.d/meth-closed-lid
-   ```
-   This configuration strictly permits members of the `%admin` group to execute only:
-   - `/usr/bin/pmset -a disablesleep 0`
-   - `/usr/bin/pmset -a disablesleep 1`
-   No wildcards, arbitrary commands, or script execution are allowed.
-4. **Auditable and Removable**: The configuration file is validated using `/usr/sbin/visudo -c -f` during installation and can be cleanly removed at any time with a single click in Meth Settings (`Remove Support`).
-
-### Fail-Safe Crash Recovery
-
-Meth incorporates multiple safeguards against leaving the system in a permanently altered sleep state:
-- **Independent Watchdog**: When Closed-Lid Mode is engaged, Meth spawns a lightweight watchdog (`MethWatchdog`) that monitors the parent application process using kernel events (`kqueue` `EVFILT_PROC` / `NOTE_EXIT`). If Meth crashes, is force-terminated, or reaches its scheduled session timeout, the watchdog immediately restores normal sleep behavior (`pmset -a disablesleep 0`).
-- **Launch Recovery**: Each time Meth starts, it verifies system sleep status. If an orphan `SleepDisabled 1` state is detected without an active session, it automatically resets the state to normal.
-- **Normal Quit Cleanup**: Application termination cleanly releases all active IOKit assertions and disables privileged overrides.
+- No generic shell execution and no arbitrary command execution: every privileged
+  invocation is a fixed, absolute-path command (`/usr/bin/pmset ...`) run through
+  `sudo -n`, never through a shell with interpolated input.
+- The sudoers rule is written to a temporary, root-owned file first, validated with
+  `visudo -c -f`, and only then atomically renamed into place — it is never written
+  through a redirection at its final path.
+- No persistent daemon, no XPC service, no login item beyond the app itself.
+- No analytics, telemetry, crash reporting, or third-party tracking.
+- No network communication of any kind. Meth does not check for updates, phone home, or
+  make any outbound connections; the only place a network is involved is when a user
+  manually downloads a release from GitHub in their browser.
 
 ---
 
 ## Installation
 
-### Option 1: Direct Download
-1. Download `Meth.zip` from the latest release.
-2. Unzip and move `Meth.app` to your `/Applications` directory.
-3. Open `Meth.app`.
-4. To enable Closed-Lid Mode, open **Settings > Closed-Lid Support** and click **Install Support** to authorize the scoped rule.
+1. Download `Meth.zip` from the [latest development build](../../releases/tag/rolling).
+2. Unzip it and move `Meth.app` to `/Applications`.
+3. Open `Meth.app`. Since development builds are not notarized, the first launch requires
+   right-clicking the app and choosing **Open**.
+4. To use Closed-Lid Mode, open **Settings → Closed-Lid Support** and click
+   **Install Support** to authorize the scoped rule once.
 
-### Option 2: Build from Source
-Requirements: macOS 13.0+, Swift 5.9+ / Xcode 15+.
+## Uninstallation
+
+- **Remove the app**: quit Meth and delete `Meth.app` from `/Applications`.
+- **Remove Closed-Lid support** (optional, if installed): open **Settings → Closed-Lid
+  Support** and click **Remove Support** before deleting the app. This restores normal
+  sleep behavior and removes the sudoers rule. If you delete the app without doing this
+  first, the harmless, narrowly-scoped rule remains on disk (it grants no privilege Meth
+  isn't already using) until manually removed:
+  `sudo rm /private/etc/sudoers.d/meth-closed-lid`.
+
+---
+
+## Building from source
+
+Requirements: macOS 13.0+, Xcode 15+ (a full Xcode installation, not just the Command
+Line Tools, is required to run the test suite — XCTest ships with Xcode).
 
 ```bash
-# Clone the repository
 git clone https://github.com/philipmohr/Meth.git
 cd Meth
 
-# Build with Swift Package Manager
+# Quick local build for the host architecture only
 swift build -c release
 
-# Run the automated test suite
+# Run the test suite (requires Xcode, not just Command Line Tools)
 swift test
 
-# Build the distributable Meth.app bundle and Meth.zip
+# Or build/test via the Xcode project generated by project.yml (XcodeGen)
+xcodebuild build -project Meth.xcodeproj -scheme Meth -configuration Release
+xcodebuild test -project Meth.xcodeproj -scheme MethTests -destination "platform=macOS"
+
+# Package the distributable, Universal 2 (arm64 + x86_64) dist/Meth.app and dist/Meth.zip
 ./scripts/build_app.sh
 ```
 
-The packaged application will be generated in `dist/Meth.app` and `dist/Meth.zip`.
+`Meth.xcodeproj` is generated from `project.yml` via [XcodeGen](https://github.com/yonaskolb/XcodeGen);
+edit `project.yml` and run `xcodegen generate` rather than editing the project directly.
 
 ---
 
-## System Requirements
+## System requirements
 
-- **macOS**: macOS 13.0 (Ventura) or later.
-- **Architectures**: Apple Silicon (M1/M2/M3/M4) and Intel (x86_64).
-- **Privileges**: Standard user permissions for ordinary keep-awake mode. Administrator authentication (once) is required only if Closed-Lid Mode is enabled.
-
----
-
-## Privacy
-
-Meth is strictly offline software.
-- Zero network traffic or network listeners.
-- No analytics, telemetry, or crash reporting services.
-- No third-party tracking frameworks.
-- No user accounts or cloud synchronization.
+- macOS 13.0 (Ventura) or later.
+- **Universal 2**: the published `Meth.zip` contains a single `Meth.app` with both Apple
+  Silicon (arm64) and Intel (x86_64) binaries; the correct slice is used automatically.
+  Intel compatibility is built and packaged but is not actively tested on real Intel
+  hardware, since none is available in this project's build environment.
+- Administrator authentication (once) only if Closed-Lid Mode is used; ordinary keep-awake
+  sessions require no elevated privileges at all.
 
 ---
 
-## Limitations
+## Development builds
 
-- **Gatekeeper**: Standalone development builds without Apple Developer ID notarization require right-clicking the app and selecting *Open* on first launch.
-- **Thermal Dissipation**: MacBooks dissipate heat partly through the keyboard deck. When closed under heavy CPU or GPU loads, thermal throttling may occur sooner than with the display open.
+Every push to `main` that builds and tests successfully updates a single, persistent
+GitHub Release: **Latest Development Build**, tagged `rolling`. Its `Meth.zip` asset is
+replaced in place (the same download URL always serves the current build), and the
+`rolling` tag always points at the exact commit that produced it. It is a normal,
+continuously-updated release — not marked as a pre-release.
 
 ---
 
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
-

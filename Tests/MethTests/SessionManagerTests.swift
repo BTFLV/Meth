@@ -1,7 +1,5 @@
 import Foundation
-#if canImport(XCTest)
 import XCTest
-#endif
 @testable import MethCore
 
 @MainActor
@@ -23,7 +21,8 @@ final class SessionManagerTests: XCTestCase {
         closedLidController = ClosedLidController(
             privilegedService: mockPrivileged,
             lidMonitor: mockLid,
-            powerMonitor: mockSource
+            powerMonitor: mockSource,
+            watchdogClient: makeIsolatedWatchdogClient()
         )
 
         sessionManager = SessionManager(
@@ -33,13 +32,13 @@ final class SessionManagerTests: XCTestCase {
         )
     }
 
-    override func tearDown() {
-        sessionManager.stopSession()
-        super.tearDown()
+    override func tearDown() async throws {
+        await sessionManager.stopSession()
+        try await super.tearDown()
     }
 
-    func testStartNormalSessionWithDisplaySleepAllowed() throws {
-        try sessionManager.startSession(
+    func testStartNormalSessionWithDisplaySleepAllowed() async throws {
+        try await sessionManager.startSession(
             duration: .preset(3600),
             allowDisplaySleep: true,
             closedLidMode: false
@@ -48,11 +47,12 @@ final class SessionManagerTests: XCTestCase {
         XCTAssertTrue(sessionManager.isSessionActive)
         XCTAssertEqual(mockPower.createdAssertions.count, 1)
         XCTAssertEqual(mockPower.createdAssertions.first?.type, .preventUserIdleSystemSleep)
-        XCTAssertFalse(closedLidController.isClosedLidActive)
+        let closedLidActive = await closedLidController.isClosedLidActive
+        XCTAssertFalse(closedLidActive)
     }
 
-    func testStartSessionWithDisplaySleepDisallowed() throws {
-        try sessionManager.startSession(
+    func testStartSessionWithDisplaySleepDisallowed() async throws {
+        try await sessionManager.startSession(
             duration: .preset(3600),
             allowDisplaySleep: false,
             closedLidMode: false
@@ -66,41 +66,44 @@ final class SessionManagerTests: XCTestCase {
         XCTAssertTrue(types.contains(.preventUserIdleDisplaySleep))
     }
 
-    func testStartClosedLidSession() throws {
-        try sessionManager.startSession(
+    func testStartClosedLidSession() async throws {
+        try await sessionManager.startSession(
             duration: .preset(1800),
             allowDisplaySleep: true,
             closedLidMode: true
         )
 
         XCTAssertTrue(sessionManager.isSessionActive)
-        XCTAssertTrue(closedLidController.isClosedLidActive)
+        let closedLidActive = await closedLidController.isClosedLidActive
+        XCTAssertTrue(closedLidActive)
         XCTAssertTrue(mockPrivileged.sleepDisabled)
         XCTAssertEqual(mockPrivileged.enableCallsCount, 1)
     }
 
-    func testStopSessionCleansUpAllState() throws {
-        try sessionManager.startSession(
+    func testStopSessionCleansUpAllState() async throws {
+        try await sessionManager.startSession(
             duration: .preset(1800),
             allowDisplaySleep: false,
             closedLidMode: true
         )
 
         XCTAssertTrue(sessionManager.isSessionActive)
-        XCTAssertTrue(closedLidController.isClosedLidActive)
+        var closedLidActive = await closedLidController.isClosedLidActive
+        XCTAssertTrue(closedLidActive)
 
-        sessionManager.stopSession()
+        await sessionManager.stopSession()
 
         XCTAssertFalse(sessionManager.isSessionActive)
         XCTAssertNil(sessionManager.activeSession)
         XCTAssertEqual(mockPower.activeCount, 0)
-        XCTAssertFalse(closedLidController.isClosedLidActive)
+        closedLidActive = await closedLidController.isClosedLidActive
+        XCTAssertFalse(closedLidActive)
         XCTAssertFalse(mockPrivileged.sleepDisabled)
         XCTAssertEqual(mockPrivileged.disableCallsCount, 1)
     }
 
-    func testSessionReplacementSafelyCleansUpOldSession() throws {
-        try sessionManager.startSession(
+    func testSessionReplacementSafelyCleansUpOldSession() async throws {
+        try await sessionManager.startSession(
             duration: .preset(3600),
             allowDisplaySleep: false,
             closedLidMode: false
@@ -110,7 +113,7 @@ final class SessionManagerTests: XCTestCase {
         XCTAssertEqual(mockPower.releasedAssertionIDs.count, 0)
 
         // Replace session with a 15-minute closed-lid session
-        try sessionManager.startSession(
+        try await sessionManager.startSession(
             duration: .preset(900),
             allowDisplaySleep: true,
             closedLidMode: true
@@ -119,33 +122,35 @@ final class SessionManagerTests: XCTestCase {
         // Previous 2 assertions must be released, new 1 assertion created
         XCTAssertEqual(mockPower.releasedAssertionIDs.count, 2)
         XCTAssertEqual(mockPower.activeCount, 1)
-        XCTAssertTrue(closedLidController.isClosedLidActive)
+        let closedLidActive = await closedLidController.isClosedLidActive
+        XCTAssertTrue(closedLidActive)
     }
 
-    func testExtendSession() throws {
-        try sessionManager.startSession(
+    func testExtendSession() async throws {
+        try await sessionManager.startSession(
             duration: .preset(600),
             allowDisplaySleep: true,
             closedLidMode: false
         )
 
         let initialRemaining = sessionManager.remainingTime ?? 0
-        sessionManager.extendSession(by: 900)
+        await sessionManager.extendSession(by: 900)
         let extendedRemaining = sessionManager.remainingTime ?? 0
 
         XCTAssertGreaterThan(extendedRemaining, initialRemaining + 800)
     }
 
-    func testClosedLidSupportNotInstalledThrows() {
-        mockPrivileged.isSupportInstalled = false
+    func testClosedLidSupportNotInstalledThrows() async {
+        mockPrivileged.status = .notInstalled
 
-        XCTAssertThrowsError(
-            try sessionManager.startSession(
+        do {
+            try await sessionManager.startSession(
                 duration: .preset(600),
                 allowDisplaySleep: true,
                 closedLidMode: true
             )
-        ) { error in
+            XCTFail("Expected startSession to throw")
+        } catch {
             guard let clError = error as? ClosedLidError else {
                 XCTFail("Expected ClosedLidError, got \(error)")
                 return
@@ -153,8 +158,53 @@ final class SessionManagerTests: XCTestCase {
             XCTAssertEqual(clError, .supportNotInstalled)
         }
 
-        // Must not leak any assertions if startup throws
+        // Must not leak any assertions if startup throws, and must not claim an active
+        // session when Closed-Lid Mode never actually engaged.
         XCTAssertEqual(mockPower.activeCount, 0)
         XCTAssertFalse(sessionManager.isSessionActive)
+        XCTAssertNil(sessionManager.activeSession)
+    }
+
+    func testPresetSessionExpiresAuthoritativelyViaMonotonicClock() async throws {
+        try await sessionManager.startSession(
+            duration: .preset(0.2),
+            allowDisplaySleep: true,
+            closedLidMode: false
+        )
+        XCTAssertTrue(sessionManager.isSessionActive)
+
+        try await Task.sleep(for: .milliseconds(600))
+
+        XCTAssertFalse(sessionManager.isSessionActive)
+        XCTAssertEqual(mockPower.activeCount, 0)
+    }
+
+    func testUntilSessionRetainsWallClockSemantics() async throws {
+        let target = Date().addingTimeInterval(0.2)
+        try await sessionManager.startSession(
+            duration: .until(target),
+            allowDisplaySleep: true,
+            closedLidMode: false
+        )
+        XCTAssertTrue(sessionManager.isSessionActive)
+
+        try await Task.sleep(for: .milliseconds(900))
+
+        XCTAssertFalse(sessionManager.isSessionActive)
+    }
+
+    func testActivationImmediatelyFollowedByStopLeavesNoResidualState() async throws {
+        try await sessionManager.startSession(
+            duration: .preset(600),
+            allowDisplaySleep: true,
+            closedLidMode: true
+        )
+        await sessionManager.stopSession()
+
+        XCTAssertFalse(sessionManager.isSessionActive)
+        XCTAssertEqual(mockPower.activeCount, 0)
+        let closedLidActive = await closedLidController.isClosedLidActive
+        XCTAssertFalse(closedLidActive)
+        XCTAssertFalse(mockPrivileged.sleepDisabled)
     }
 }

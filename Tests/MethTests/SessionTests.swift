@@ -1,7 +1,5 @@
 import Foundation
-#if canImport(XCTest)
 import XCTest
-#endif
 @testable import MethCore
 
 final class SessionTests: XCTestCase {
