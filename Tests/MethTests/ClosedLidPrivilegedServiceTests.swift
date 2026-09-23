@@ -23,10 +23,9 @@ final class SimulatedPmsetExecutor: ProcessExecuting, @unchecked Sendable {
 
         if arguments.contains("live") {
             let value = sleepDisabled ? "1" : "0"
-            // Real `pmset -g live` output is space-separated (often column-aligned with
-            // several spaces); `isSleepDisabled()` splits on " ", so a tab here would never
-            // match and would silently make this always report "not disabled".
-            return (0, "SleepDisabled              \(value)\n", "")
+            // Matches real `pmset -g live` output, which separates this key from its
+            // value with tabs.
+            return (0, "System-wide power settings:\n SleepDisabled\t\t\(value)\n", "")
         }
 
         guard arguments.contains("disablesleep"), arguments.contains("0") else {
@@ -141,5 +140,27 @@ final class ClosedLidPrivilegedServiceTests: XCTestCase {
         XCTAssertFalse(service.isOwnershipMarkerSet())
         service.clearOwnershipMarker() // no-op, must not throw or crash
         XCTAssertFalse(service.isOwnershipMarkerSet())
+    }
+
+    /// Regression test: `isSleepDisabled()` once split lines on " " only, so the
+    /// tab-separated output of real `pmset -g live` always read as "not disabled" -- which
+    /// made the watchdog and startup recovery skip restoring sleep entirely.
+    func testIsSleepDisabledParsesTabAndSpaceSeparatedPmsetOutput() {
+        let cases: [(output: String, expected: Bool)] = [
+            ("System-wide power settings:\n SleepDisabled\t\t1\nCurrently in use:\n standby              1\n", true),
+            ("System-wide power settings:\n SleepDisabled\t\t0\nCurrently in use:\n standby              1\n", false),
+            (" SleepDisabled              1\n", true),
+            (" SleepDisabled              0\n", false),
+            // Other keys with a value of 1 must not be mistaken for SleepDisabled.
+            ("Currently in use:\n Sleep On Power Button 1\n standby              1\n", false),
+            ("", false)
+        ]
+
+        for (output, expected) in cases {
+            let executor = RecordingProcessExecutor()
+            executor.resultProvider = { _, _ in (0, output, "") }
+            let service = ClosedLidPrivilegedService(sudoersFilePath: "/tmp/does-not-matter", executor: executor)
+            XCTAssertEqual(service.isSleepDisabled(), expected, "pmset output: \(output.debugDescription)")
+        }
     }
 }

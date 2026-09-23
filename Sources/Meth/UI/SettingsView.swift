@@ -140,7 +140,7 @@ public struct SettingsView: View {
 
     private func installSupport() {
         isProcessing = true
-        actionMessage = "Authenticating with macOS..."
+        actionMessage = "Authenticating with macOS…"
         Task {
             do {
                 try await sessionManager.installClosedLidSupport()
@@ -161,7 +161,7 @@ public struct SettingsView: View {
 
     private func uninstallSupport() {
         isProcessing = true
-        actionMessage = "Authenticating with macOS..."
+        actionMessage = "Authenticating with macOS…"
         Task {
             do {
                 try await sessionManager.uninstallClosedLidSupport()

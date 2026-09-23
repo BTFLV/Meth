@@ -102,12 +102,14 @@ public final class ClosedLidPrivilegedService: ClosedLidPrivilegedManaging, @unc
         let result = executor.execute(executable: Self.pmsetPath, arguments: ["-g", "live"])
         guard result.exitCode == 0 else { return false }
 
+        // Current macOS releases separate the key from its value with tabs
+        // (" SleepDisabled\t\t1"), others with runs of spaces, so split on any whitespace.
+        // Splitting on " " alone made this always report false on real systems, which
+        // silently disabled the watchdog and startup recovery.
         for line in result.stdout.components(separatedBy: .newlines) {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard trimmed.hasPrefix("SleepDisabled") else { continue }
-            let parts = trimmed.split(separator: " ", omittingEmptySubsequences: true)
-            if parts.count >= 2, parts[1] == "1" {
-                return true
+            let parts = line.split(whereSeparator: { $0.isWhitespace })
+            if parts.count >= 2, parts[0] == "SleepDisabled" {
+                return parts[1] == "1"
             }
         }
         return false

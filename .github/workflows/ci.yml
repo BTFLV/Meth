@@ -1,0 +1,146 @@
+name: CI
+
+# Untrusted continuous integration: runs for pull requests (including forks) and pushes to
+# main. It never uses the `release-signing` environment or any secret and never publishes
+# anything. release.yml also calls this workflow so every release is built from a commit
+# that passed exactly these checks.
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+  workflow_call:
+
+permissions:
+  contents: read
+
+# Superseded pull request runs are cancelled; runs on main (and release runs, which get
+# their own group via the caller's workflow name) always complete.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Canonical correctness gate, and the required status check on main: keep the job name
+  # "Verify". Builds the real Xcode project/scheme and runs the XCTest suite. A lightweight
+  # SwiftPM build is kept alongside it because Package.swift is a separately documented,
+  # supported build route that can drift from the Xcode project.
+  verify:
+    name: Verify
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Show toolchain versions
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Check release metadata
+        run: ./scripts/release_metadata.sh check
+
+      # .release-version is the release trigger (see release.yml), so a pull request that
+      # changes it is a release pull request: it must come from the matching
+      # release/vX.Y.Z branch and name a new, higher, not yet tagged version.
+      - name: Check release marker changes
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+          version="$(./scripts/release_metadata.sh version)"
+          base_version="$(git show "origin/${BASE_REF}:.release-version" 2>/dev/null | tr -d '[:space:]' || true)"
+
+          # Any byte change triggers release.yml after merge, so compare the file itself.
+          if git diff --quiet "origin/${BASE_REF}" HEAD -- .release-version; then
+            echo "Release marker unchanged (${version}); merging this pull request will not publish a release."
+            exit 0
+          fi
+          echo "This pull request changes .release-version from '${base_version:-<none>}' to '${version}'; merging it publishes Meth ${version}."
+
+          if [ "${HEAD_REF}" != "release/v${version}" ]; then
+            echo "::error::.release-version may only be changed from branch release/v${version}, not '${HEAD_REF}'."
+            exit 1
+          fi
+          if [ -n "${base_version}" ]; then
+            IFS=. read -r new_major new_minor new_patch <<< "${version}"
+            IFS=. read -r old_major old_minor old_patch <<< "${base_version}"
+            if (( new_major < old_major || (new_major == old_major && (new_minor < old_minor || (new_minor == old_minor && new_patch <= old_patch))) )); then
+              echo "::error::Version ${version} is not higher than the current ${base_version}."
+              exit 1
+            fi
+          fi
+          if [ -n "$(git ls-remote --tags origin "refs/tags/v${version}")" ]; then
+            echo "::error::Tag v${version} already exists."
+            exit 1
+          fi
+
+      - name: Swift Package build (sanity check)
+        run: swift build
+
+      - name: Build Meth (Xcode, Release)
+        run: |
+          xcodebuild build \
+            -project Meth.xcodeproj \
+            -scheme Meth \
+            -configuration Release \
+            -derivedDataPath .derivedData \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+
+      - name: Run MethTests
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Meth.xcodeproj \
+            -scheme MethTests \
+            -destination "platform=macOS" \
+            -derivedDataPath .derivedData \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee test-output.log
+
+      - name: Confirm tests actually executed
+        run: |
+          set -euo pipefail
+          summary_line="$(grep -E "Executed [0-9]+ tests?," test-output.log | tail -1 || true)"
+          if [ -z "${summary_line}" ]; then
+            echo "Could not find an 'Executed N tests' summary line in xcodebuild output; treating as a failure." >&2
+            exit 1
+          fi
+          count="$(echo "${summary_line}" | grep -oE "Executed [0-9]+" | grep -oE "[0-9]+")"
+          echo "xcodebuild reported: ${summary_line}"
+          if [ "${count}" -lt 1 ]; then
+            echo "xcodebuild test executed zero tests." >&2
+            exit 1
+          fi
+
+  # Validates the packaging path contributors use: a Universal 2 (arm64 + x86_64) Meth.app,
+  # ad-hoc signed and zipped, with the internal checks in scripts/build_app.sh. The
+  # artifact is for testing only; official releases are built by release.yml.
+  package:
+    name: Package (ad-hoc signed)
+    needs: verify
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build and package Meth.app
+        run: ./scripts/build_app.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Meth-dist-adhoc
+          path: dist/Meth.zip
+          if-no-files-found: error
+          retention-days: 14

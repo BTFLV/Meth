@@ -74,7 +74,11 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         }
 
         menu.addItem(NSMenuItem.separator())
-        let settingsItem = NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ",")
+        let aboutItem = NSMenuItem(title: "About Meth", action: #selector(showAbout), keyEquivalent: "")
+        aboutItem.target = self
+        menu.addItem(aboutItem)
+
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
 
@@ -146,7 +150,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         addDurationItem(to: startMenu, title: "4 Hours", duration: .preset(SessionDuration.fourHours))
         addDurationItem(to: startMenu, title: "8 Hours", duration: .preset(SessionDuration.eightHours))
 
-        let untilItem = NSMenuItem(title: "Until...", action: #selector(startUntilTimeSession), keyEquivalent: "")
+        let untilItem = NSMenuItem(title: "Until…", action: #selector(startUntilTimeSession), keyEquivalent: "")
         untilItem.target = self
         startMenu.addItem(untilItem)
 
@@ -321,6 +325,13 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
             sessionManager.defaultClosedLidMode = newState
             rebuildMenu()
         }
+    }
+
+    /// The standard panel shows the bundle's CFBundleShortVersionString and CFBundleVersion,
+    /// which is the easiest way for users to tell which release they are running.
+    @objc private func showAbout() {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(nil)
     }
 
     @objc private func openSettings() {
