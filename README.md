@@ -20,6 +20,10 @@ sleep, not the sleep macOS triggers when the lid is closed. Meth adds a dedicate
 narrowly-scoped mechanism specifically for that case, so long-running work — builds,
 downloads, remote sessions, local servers — can keep running with the lid shut.
 
+<p align="center">
+  <img alt="Meth menu bar interface and Closed-Lid Mode options" src="Assets/meth_screenshot.png" width="480">
+</p>
+
 ---
 
 ## Features

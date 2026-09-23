@@ -25,3 +25,5 @@ xcuserdata/
 dist/
 *.zip
 
+# Website
+website/
