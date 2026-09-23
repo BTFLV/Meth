@@ -9,7 +9,6 @@ DIST_DIR="${ROOT_DIR}/dist"
 APP_BUNDLE="${DIST_DIR}/Meth.app"
 MACOS_DIR="${APP_BUNDLE}/Contents/MacOS"
 RESOURCES_DIR="${APP_BUNDLE}/Contents/Resources"
-ZIP_PATH="${DIST_DIR}/Meth.zip"
 
 ARM64_DIR=".build/arm64-apple-macosx/release"
 X86_64_DIR=".build/x86_64-apple-macosx/release"
@@ -131,32 +130,6 @@ plutil -lint "${APP_BUNDLE}/Contents/Info.plist" >/dev/null
 identifier="$(plutil -extract CFBundleIdentifier raw "${APP_BUNDLE}/Contents/Info.plist")"
 [ "${identifier}" = "com.meth.app" ] || { echo "Unexpected CFBundleIdentifier: ${identifier}" >&2; exit 1; }
 
-echo "==> Creating zip archive..."
-rm -f "${ZIP_PATH}"
-# ditto preserves the bundle structure, permissions, and resource forks correctly, unlike
-# the generic `zip` tool.
-ditto -c -k --sequesterRsrc --keepParent "${APP_BUNDLE}" "${ZIP_PATH}"
-
-echo "==> Verifying zip archive..."
-[ -s "${ZIP_PATH}" ] || { echo "${ZIP_PATH} is missing or empty" >&2; exit 1; }
-unzip -tq "${ZIP_PATH}" >/dev/null
-
-# Captured into a variable first: piping `unzip -Z1` directly into `grep -q` can trigger a
-# spurious SIGPIPE/pipefail failure when grep exits before unzip finishes writing.
-zip_listing="$(unzip -Z1 "${ZIP_PATH}")"
-for expected in \
-  "Meth.app/Contents/MacOS/Meth" \
-  "Meth.app/Contents/MacOS/MethWatchdog" \
-  "Meth.app/Contents/Info.plist" \
-  "Meth.app/Contents/Resources/AppIcon.icns"; do
-  found=0
-  while IFS= read -r entry; do
-    if [ "${entry}" = "${expected}" ]; then
-      found=1
-      break
-    fi
-  done <<< "${zip_listing}"
-  [ "${found}" -eq 1 ] || { echo "${expected} missing from archive" >&2; exit 1; }
-done
-
-echo "==> Successfully created ${ZIP_PATH}"
+# Zip packaging lives in its own script so CI can re-create the zip after notarization and
+# stapling without rebuilding.
+"${SCRIPT_DIR}/package_zip.sh"

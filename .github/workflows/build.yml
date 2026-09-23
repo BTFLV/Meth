@@ -110,7 +110,9 @@ jobs:
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     environment: release-signing
     runs-on: macos-15
-    timeout-minutes: 30
+    # Longer than the other jobs: Apple's notary service usually answers in minutes but can
+    # take considerably longer.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -173,7 +175,87 @@ jobs:
           fi
           ./scripts/build_app.sh
 
-      - name: Remove temporary signing material
+      # build_app.sh leaves a zip of the signed-but-unstapled app in dist/. Move it out to
+      # serve as the notarization submission, so dist/Meth.zip only exists again once it has
+      # been re-created from the stapled app below.
+      - name: Notarize Meth.app
+        env:
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_PRIVATE_KEY: ${{ secrets.APPLE_NOTARY_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          for name in APPLE_NOTARY_KEY_ID APPLE_NOTARY_ISSUER_ID APPLE_NOTARY_PRIVATE_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "Required secret ${name} is not set." >&2
+              exit 1
+            fi
+          done
+
+          notary_dir="${RUNNER_TEMP}/meth-notary"
+          umask 077
+          mkdir -p "${notary_dir}"
+          key_path="${notary_dir}/AuthKey_${APPLE_NOTARY_KEY_ID}.p8"
+          trap 'rm -f "${key_path}"' EXIT
+          printf '%s\n' "${APPLE_NOTARY_PRIVATE_KEY}" > "${key_path}"
+          notary_auth=(--key "${key_path}" --key-id "${APPLE_NOTARY_KEY_ID}" --issuer "${APPLE_NOTARY_ISSUER_ID}")
+
+          submission_zip="${notary_dir}/Meth-submission.zip"
+          mv dist/Meth.zip "${submission_zip}"
+
+          echo "==> Submitting to Apple notary service and waiting for a result..."
+          submit_exit=0
+          xcrun notarytool submit "${submission_zip}" "${notary_auth[@]}" \
+            --wait --timeout 45m --output-format json > "${notary_dir}/submit.json" || submit_exit=$?
+
+          submission_id="$(plutil -extract id raw -o - "${notary_dir}/submit.json" 2>/dev/null || true)"
+          status="$(plutil -extract status raw -o - "${notary_dir}/submit.json" 2>/dev/null || true)"
+          echo "notarytool exit code: ${submit_exit}"
+          echo "Submission ID: ${submission_id:-<none>}"
+          echo "Status: ${status:-<unknown>}"
+
+          if [ -n "${submission_id}" ]; then
+            echo "==> Notarization log:"
+            if xcrun notarytool log "${submission_id}" "${notary_auth[@]}" "${notary_dir}/notary-log.json"; then
+              cat "${notary_dir}/notary-log.json"
+            else
+              echo "Could not retrieve the notarization log." >&2
+            fi
+          else
+            echo "notarytool response:" >&2
+            cat "${notary_dir}/submit.json" >&2 || true
+          fi
+
+          if [ "${submit_exit}" -ne 0 ] || [ "${status}" != "Accepted" ]; then
+            echo "Notarization did not succeed (status: ${status:-<unknown>}); not publishing." >&2
+            exit 1
+          fi
+
+      - name: Staple and verify notarized Meth.app
+        run: |
+          set -euo pipefail
+          xcrun stapler staple dist/Meth.app
+          xcrun stapler validate dist/Meth.app
+          codesign --verify --deep --strict --verbose=2 dist/Meth.app
+          spctl --assess --type execute --verbose=4 dist/Meth.app
+
+      - name: Create and verify final Meth.zip from stapled app
+        run: |
+          set -euo pipefail
+          ./scripts/package_zip.sh
+
+          # Check what users will actually download: the extracted app must carry the
+          # stapled ticket and pass Gatekeeper.
+          check_dir="${RUNNER_TEMP}/meth-notary/final-zip-check"
+          rm -rf "${check_dir}"
+          mkdir -p "${check_dir}"
+          ditto -x -k dist/Meth.zip "${check_dir}"
+          xcrun stapler validate "${check_dir}/Meth.app"
+          codesign --verify --deep --strict --verbose=2 "${check_dir}/Meth.app"
+          spctl --assess --type execute --verbose=4 "${check_dir}/Meth.app"
+          rm -rf "${check_dir}"
+
+      - name: Remove temporary signing and notarization material
         if: always()
         run: |
           signing_dir="${RUNNER_TEMP}/meth-signing"
@@ -181,18 +263,19 @@ jobs:
           if [ -f "${keychain_path}" ]; then
             security delete-keychain "${keychain_path}" || true
           fi
-          rm -rf "${signing_dir}"
+          rm -rf "${signing_dir}" "${RUNNER_TEMP}/meth-notary"
 
       - uses: actions/upload-artifact@v4
         with:
           name: Meth-dist-signed
           path: dist/Meth.zip
+          if-no-files-found: error
           retention-days: 14
 
   # Publishes/updates the single persistent "rolling" release from the exact commit that
   # was just verified and packaged. Only runs for pushes to main or a manual dispatch on
-  # main; never for pull requests. Consumes only the Developer-ID-signed artifact from
-  # `package-signed`, since the release notes state the build is Developer ID signed.
+  # main; never for pull requests. Consumes only the signed, notarized and stapled artifact
+  # from `package-signed`, since the release notes state the build is signed and notarized.
   # Needs no macOS-specific tooling.
   release:
     name: Update Rolling Release
@@ -259,7 +342,7 @@ jobs:
             echo "- \`Meth.zip\` — Universal (Apple Silicon + Intel) macOS application bundle"
             echo
             echo "> [!NOTE]"
-            echo "> This is a continuously updated development build. It is signed with an Apple Developer ID Application certificate but is not yet notarized."
+            echo "> This is a continuously updated development build. It is signed with an Apple Developer ID Application certificate and notarized by Apple."
           } > release_notes.md
 
       - name: Publish or update the rolling release
