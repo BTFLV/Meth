@@ -27,3 +27,12 @@ dist/
 
 # Website
 website/
+
+# Code-signing credentials (never commit these; CI gets them from GitHub Actions secrets)
+*.p12
+*.pfx
+*.p8
+*.mobileprovision
+*.provisionprofile
+*.keychain
+*.keychain-db

@@ -18,7 +18,7 @@ Meth is a lightweight, native macOS menu bar utility for controlling system slee
 defining feature is **Closed-Lid Mode**: ordinary "keep awake" tools only prevent *idle*
 sleep, not the sleep macOS triggers when the lid is closed. Meth adds a dedicated,
 narrowly-scoped mechanism specifically for that case, so long-running work — builds,
-downloads, remote sessions, local servers — can keep running with the lid shut.
+downloads, vibecoding sessions, remote sessions, local servers — can keep running with the lid shut.
 
 <p align="center">
   <img alt="Meth menu bar interface and Closed-Lid Mode options" src="Assets/meth_screenshot.png" width="480">
@@ -138,7 +138,7 @@ Requirements: macOS 13.0+, Xcode 15+ (a full Xcode installation, not just the Co
 Line Tools, is required to run the test suite — XCTest ships with Xcode).
 
 ```bash
-git clone https://github.com/philipmohr/Meth.git
+git clone https://github.com/BTFLV/Meth.git
 cd Meth
 
 # Quick local build for the host architecture only

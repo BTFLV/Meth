@@ -75,16 +75,25 @@ jobs:
             exit 1
           fi
 
-  # Produces the actual downloadable artifact: a Universal 2 (arm64 + x86_64) Meth.app,
-  # zipped, with its own internal validation (see scripts/build_app.sh). This is the only
-  # place the release artifact is built; Release never rebuilds anything.
+  # Produces the downloadable artifact: a Universal 2 (arm64 + x86_64) Meth.app, zipped,
+  # with its own internal validation (see scripts/build_app.sh). Release never rebuilds
+  # anything.
+  #
+  # Packaging is split by trust. `package` handles every untrusted run (pull requests,
+  # including forks) with an ad-hoc signed build and no environment or secrets.
+  # `package-signed` runs only for pushes to main or manual dispatches on main, and is the
+  # only job attached to the `release-signing` environment (itself restricted to main).
+  # The two conditions are exact complements, so exactly one of them runs.
   package:
-    name: Package
+    name: Package (ad-hoc signed)
     needs: verify
+    if: "!((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main')"
     runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Build and package Meth.app
         run: ./scripts/build_app.sh
@@ -95,13 +104,100 @@ jobs:
           path: dist/Meth.zip
           retention-days: 14
 
+  package-signed:
+    name: Package (Developer ID signed)
+    needs: verify
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    environment: release-signing
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Import Developer ID certificate into temporary keychain
+        id: signing
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in APPLE_CERTIFICATE_P12 APPLE_CERTIFICATE_PASSWORD APPLE_KEYCHAIN_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "Required secret ${name} is not set." >&2
+              exit 1
+            fi
+          done
+
+          signing_dir="${RUNNER_TEMP}/meth-signing"
+          keychain_path="${signing_dir}/signing.keychain-db"
+          cert_path="${signing_dir}/certificate.p12"
+          umask 077
+          mkdir -p "${signing_dir}"
+
+          printf '%s' "${APPLE_CERTIFICATE_P12}" | tr -d '[:space:]' | base64 --decode > "${cert_path}"
+
+          security create-keychain -p "${APPLE_KEYCHAIN_PASSWORD}" "${keychain_path}"
+          # Auto-lock after 6 hours and on sleep; comfortably longer than the job timeout.
+          security set-keychain-settings -lut 21600 "${keychain_path}"
+          security unlock-keychain -p "${APPLE_KEYCHAIN_PASSWORD}" "${keychain_path}"
+          # -T limits private key access to codesign rather than granting it to all apps.
+          security import "${cert_path}" -k "${keychain_path}" -f pkcs12 \
+            -P "${APPLE_CERTIFICATE_PASSWORD}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+            -k "${APPLE_KEYCHAIN_PASSWORD}" "${keychain_path}" >/dev/null
+          rm -f "${cert_path}"
+
+          # Add to the user search list so codesign can resolve the certificate chain.
+          existing_keychains=()
+          while IFS= read -r keychain; do
+            keychain="${keychain#"${keychain%%[![:space:]]*}"}"
+            keychain="${keychain//\"/}"
+            [ -n "${keychain}" ] && existing_keychains+=("${keychain}")
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "${keychain_path}" "${existing_keychains[@]}"
+
+          echo "keychain=${keychain_path}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build and package Meth.app
+        env:
+          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          SIGNING_KEYCHAIN: ${{ steps.signing.outputs.keychain }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SIGNING_IDENTITY}" ]; then
+            echo "Required secret APPLE_SIGNING_IDENTITY is not set." >&2
+            exit 1
+          fi
+          ./scripts/build_app.sh
+
+      - name: Remove temporary signing material
+        if: always()
+        run: |
+          signing_dir="${RUNNER_TEMP}/meth-signing"
+          keychain_path="${signing_dir}/signing.keychain-db"
+          if [ -f "${keychain_path}" ]; then
+            security delete-keychain "${keychain_path}" || true
+          fi
+          rm -rf "${signing_dir}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Meth-dist-signed
+          path: dist/Meth.zip
+          retention-days: 14
+
   # Publishes/updates the single persistent "rolling" release from the exact commit that
   # was just verified and packaged. Only runs for pushes to main or a manual dispatch on
-  # main; never for pull requests. Needs no macOS-specific tooling.
+  # main; never for pull requests. Consumes only the Developer-ID-signed artifact from
+  # `package-signed`, since the release notes state the build is Developer ID signed.
+  # Needs no macOS-specific tooling.
   release:
     name: Update Rolling Release
-    needs: package
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: package-signed
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
@@ -118,7 +214,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: Meth-dist
+          name: Meth-dist-signed
           path: dist
 
       - name: Validate the packaged artifact
@@ -163,7 +259,7 @@ jobs:
             echo "- \`Meth.zip\` — Universal (Apple Silicon + Intel) macOS application bundle"
             echo
             echo "> [!NOTE]"
-            echo "> This is a continuously updated development build. It is ad-hoc signed and is not notarized."
+            echo "> This is a continuously updated development build. It is signed with an Apple Developer ID Application certificate but is not yet notarized."
           } > release_notes.md
 
       - name: Publish or update the rolling release

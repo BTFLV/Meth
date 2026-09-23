@@ -51,10 +51,65 @@ printf "APPL????" > "${APP_BUNDLE}/Contents/PkgInfo"
 # packaging needs no SVG toolchain.
 cp "${ROOT_DIR}/Sources/Meth/Resources/AppIcon.icns" "${RESOURCES_DIR}/AppIcon.icns"
 
-# Ad-hoc code sign for local running without Apple Developer identity
-echo "==> Ad-hoc signing Meth.app..."
-codesign --force --deep --sign - "${APP_BUNDLE}"
-codesign --verify --deep --strict "${APP_BUNDLE}"
+# Code signing. Ad-hoc by default, so contributors need no Apple Developer certificate.
+# Official builds set SIGNING_IDENTITY to a "Developer ID Application: ..." identity (and
+# optionally SIGNING_KEYCHAIN, as CI does). Nested code is signed explicitly inside-out
+# instead of relying on --deep.
+SIGNING_IDENTITY="${SIGNING_IDENTITY:-}"
+SIGNING_KEYCHAIN="${SIGNING_KEYCHAIN:-}"
+EXPECTED_TEAM_ID="${EXPECTED_TEAM_ID:-5BA47U384K}"
+
+codesign_args=(--force)
+if [ -n "${SIGNING_IDENTITY}" ]; then
+  echo "==> Signing Meth.app with Developer ID identity..."
+  codesign_args+=(--sign "${SIGNING_IDENTITY}" --options runtime --timestamp)
+  if [ -n "${SIGNING_KEYCHAIN}" ]; then
+    codesign_args+=(--keychain "${SIGNING_KEYCHAIN}")
+  fi
+else
+  echo "==> Ad-hoc signing Meth.app (set SIGNING_IDENTITY for Developer ID signing)..."
+  codesign_args+=(--sign -)
+fi
+
+codesign "${codesign_args[@]}" --identifier com.meth.watchdog "${MACOS_DIR}/MethWatchdog"
+codesign "${codesign_args[@]}" --identifier com.meth.app "${MACOS_DIR}/Meth"
+codesign "${codesign_args[@]}" "${APP_BUNDLE}"
+
+echo "==> Verifying code signature..."
+codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
+
+if [ -n "${SIGNING_IDENTITY}" ]; then
+  # Apple's designated requirement for Developer ID Application code: chains to an Apple
+  # anchor through the Developer ID intermediate, with a Developer ID Application leaf
+  # certificate issued to the expected team. Rejects ad-hoc and any other certificate type.
+  developer_id_requirement="anchor apple generic"
+  developer_id_requirement+=" and certificate 1[field.1.2.840.113635.100.6.2.6] exists"
+  developer_id_requirement+=" and certificate leaf[field.1.2.840.113635.100.6.1.13] exists"
+  developer_id_requirement+=" and certificate leaf[subject.OU] = \"${EXPECTED_TEAM_ID}\""
+
+  for path in "${MACOS_DIR}/MethWatchdog" "${MACOS_DIR}/Meth" "${APP_BUNDLE}"; do
+    codesign --verify --strict --test-requirement="=${developer_id_requirement}" "${path}" \
+      || { echo "${path} is not signed with a Developer ID Application identity for team ${EXPECTED_TEAM_ID}" >&2; exit 1; }
+
+    signature_info="$(codesign --display --verbose=2 "${path}" 2>&1)"
+    if grep -q "^Signature=adhoc" <<< "${signature_info}"; then
+      echo "${path} is ad-hoc signed although SIGNING_IDENTITY was provided" >&2
+      exit 1
+    fi
+    grep -qFx "TeamIdentifier=${EXPECTED_TEAM_ID}" <<< "${signature_info}" \
+      || { echo "${path} does not have TeamIdentifier=${EXPECTED_TEAM_ID}" >&2; exit 1; }
+    grep -qE "^CodeDirectory .*flags=0x[0-9a-f]+\([^)]*runtime" <<< "${signature_info}" \
+      || { echo "${path} is not signed with the hardened runtime" >&2; exit 1; }
+    grep -q "^Timestamp=" <<< "${signature_info}" \
+      || { echo "${path} has no secure timestamp" >&2; exit 1; }
+    # SIGNING_IDENTITY may also be a certificate SHA-1 hash, which has no Authority line to match.
+    if ! [[ "${SIGNING_IDENTITY}" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+      grep -qFx "Authority=${SIGNING_IDENTITY}" <<< "${signature_info}" \
+        || { echo "${path} is not signed by ${SIGNING_IDENTITY}" >&2; exit 1; }
+    fi
+    echo "    $(basename "${path}"): Developer ID, team ${EXPECTED_TEAM_ID}, hardened runtime, timestamped"
+  done
+fi
 
 echo "==> Verifying application bundle..."
 for binary in Meth MethWatchdog; do
