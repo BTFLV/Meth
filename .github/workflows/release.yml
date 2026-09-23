@@ -1,0 +1,368 @@
+name: Release
+
+# Publishes an immutable, versioned GitHub Release (tag vX.Y.Z, title "Meth X.Y.Z").
+#
+# Trigger: a push to main that changes .release-version, i.e. a merged release/vX.Y.Z pull
+# request. Ordinary merges never touch that file, so they never run this workflow.
+#
+# Flow: prepare (validate version, changelog, tag and release state) -> verify (the CI
+# workflow) -> package-signed (Developer ID sign, notarize, staple, Gatekeeper-check) ->
+# publish (push the annotated tag, then create the GitHub Release).
+#
+# Failure semantics (scripts/check_release_state.sh decides what is safe):
+# - A failure before `publish` pushes the tag leaves no tag and no release.
+# - If the tag was pushed but creating the release failed, the tag stays; a retry finds it
+#   pointing at the same commit and only creates the missing release. If `gh` left a draft
+#   release behind, the retry stops until that draft is deleted by hand.
+# - A retry is refused if the version's GitHub Release (published or draft) exists or the
+#   tag points at another commit. Tags are never moved or deleted and existing releases or
+#   their assets are never replaced.
+# Retry by re-running the failed run (it keeps the original commit). A manual
+# workflow_dispatch on main is also accepted, but only while main is still the commit that
+# last changed .release-version.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.release-version'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release metadata and state
+        id: metadata
+        run: |
+          set -euo pipefail
+          version="$(./scripts/release_metadata.sh check)"
+          tag="v${version}"
+          ./scripts/release_metadata.sh notes > release_notes.md
+
+          # A manual run builds whatever main currently points at. Only allow that while
+          # main is still the commit that introduced this version, so later unrelated
+          # merges can never be released under it.
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            release_commit="$(git log -1 --first-parent --format=%H -- .release-version)"
+            if [ "${release_commit}" != "${GITHUB_SHA}" ]; then
+              echo "::error::main (${GITHUB_SHA}) has moved past ${release_commit}, the commit that set version ${version}. Re-run the original Release run for that commit instead."
+              exit 1
+            fi
+          fi
+
+          state="$(./scripts/check_release_state.sh "${tag}" "${GITHUB_SHA}")"
+
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "Preparing Meth ${version} (${tag}) from ${GITHUB_SHA} (state: ${state})."
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release_notes.md
+          if-no-files-found: error
+          retention-days: 30
+
+  verify:
+    name: Verify
+    needs: prepare
+    uses: ./.github/workflows/ci.yml
+
+  # The only job that can access the `release-signing` environment and its secrets. It has
+  # read-only repository access; tagging and publishing happen in `publish`, which has no
+  # secrets.
+  package-signed:
+    name: Package (Developer ID signed, notarized)
+    needs: [prepare, verify]
+    if: github.ref == 'refs/heads/main'
+    environment: release-signing
+    runs-on: macos-15
+    # Longer than the other jobs: Apple's notary service usually answers in minutes but can
+    # take considerably longer.
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      # Full history so build_app.sh can derive the build number from the commit count.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Import Developer ID certificate into temporary keychain
+        id: signing
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in APPLE_CERTIFICATE_P12 APPLE_CERTIFICATE_PASSWORD APPLE_KEYCHAIN_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "Required secret ${name} is not set." >&2
+              exit 1
+            fi
+          done
+
+          signing_dir="${RUNNER_TEMP}/meth-signing"
+          keychain_path="${signing_dir}/signing.keychain-db"
+          cert_path="${signing_dir}/certificate.p12"
+          umask 077
+          mkdir -p "${signing_dir}"
+
+          printf '%s' "${APPLE_CERTIFICATE_P12}" | tr -d '[:space:]' | base64 --decode > "${cert_path}"
+
+          security create-keychain -p "${APPLE_KEYCHAIN_PASSWORD}" "${keychain_path}"
+          # Auto-lock after 6 hours and on sleep; comfortably longer than the job timeout.
+          security set-keychain-settings -lut 21600 "${keychain_path}"
+          security unlock-keychain -p "${APPLE_KEYCHAIN_PASSWORD}" "${keychain_path}"
+          # -T limits private key access to codesign rather than granting it to all apps.
+          security import "${cert_path}" -k "${keychain_path}" -f pkcs12 \
+            -P "${APPLE_CERTIFICATE_PASSWORD}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+            -k "${APPLE_KEYCHAIN_PASSWORD}" "${keychain_path}" >/dev/null
+          rm -f "${cert_path}"
+
+          # Add to the user search list so codesign can resolve the certificate chain.
+          existing_keychains=()
+          while IFS= read -r keychain; do
+            keychain="${keychain#"${keychain%%[![:space:]]*}"}"
+            keychain="${keychain//\"/}"
+            [ -n "${keychain}" ] && existing_keychains+=("${keychain}")
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "${keychain_path}" "${existing_keychains[@]}"
+
+          echo "keychain=${keychain_path}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build and package Meth.app
+        env:
+          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          SIGNING_KEYCHAIN: ${{ steps.signing.outputs.keychain }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SIGNING_IDENTITY}" ]; then
+            echo "Required secret APPLE_SIGNING_IDENTITY is not set." >&2
+            exit 1
+          fi
+          ./scripts/build_app.sh
+
+      - name: Confirm bundle version
+        run: |
+          set -euo pipefail
+          plist="dist/Meth.app/Contents/Info.plist"
+          short_version="$(plutil -extract CFBundleShortVersionString raw "${plist}")"
+          build_number="$(plutil -extract CFBundleVersion raw "${plist}")"
+          echo "CFBundleShortVersionString=${short_version} CFBundleVersion=${build_number}"
+          if [ "${short_version}" != "${VERSION}" ]; then
+            echo "::error::Bundle version ${short_version} does not match release version ${VERSION}."
+            exit 1
+          fi
+          if ! [[ "${build_number}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Unexpected build number '${build_number}'; a release needs full git history."
+            exit 1
+          fi
+
+      # build_app.sh leaves a zip of the signed-but-unstapled app in dist/. Move it out to
+      # serve as the notarization submission, so dist/Meth.zip only exists again once it has
+      # been re-created from the stapled app below.
+      - name: Notarize Meth.app
+        env:
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_PRIVATE_KEY: ${{ secrets.APPLE_NOTARY_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          for name in APPLE_NOTARY_KEY_ID APPLE_NOTARY_ISSUER_ID APPLE_NOTARY_PRIVATE_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "Required secret ${name} is not set." >&2
+              exit 1
+            fi
+          done
+
+          notary_dir="${RUNNER_TEMP}/meth-notary"
+          umask 077
+          mkdir -p "${notary_dir}"
+          key_path="${notary_dir}/AuthKey_${APPLE_NOTARY_KEY_ID}.p8"
+          trap 'rm -f "${key_path}"' EXIT
+          printf '%s\n' "${APPLE_NOTARY_PRIVATE_KEY}" > "${key_path}"
+          notary_auth=(--key "${key_path}" --key-id "${APPLE_NOTARY_KEY_ID}" --issuer "${APPLE_NOTARY_ISSUER_ID}")
+
+          submission_zip="${notary_dir}/Meth-submission.zip"
+          mv dist/Meth.zip "${submission_zip}"
+
+          echo "==> Submitting to Apple notary service and waiting for a result..."
+          submit_exit=0
+          xcrun notarytool submit "${submission_zip}" "${notary_auth[@]}" \
+            --wait --timeout 45m --output-format json > "${notary_dir}/submit.json" || submit_exit=$?
+
+          submission_id="$(plutil -extract id raw -o - "${notary_dir}/submit.json" 2>/dev/null || true)"
+          status="$(plutil -extract status raw -o - "${notary_dir}/submit.json" 2>/dev/null || true)"
+          echo "notarytool exit code: ${submit_exit}"
+          echo "Submission ID: ${submission_id:-<none>}"
+          echo "Status: ${status:-<unknown>}"
+
+          if [ -n "${submission_id}" ]; then
+            echo "==> Notarization log:"
+            if xcrun notarytool log "${submission_id}" "${notary_auth[@]}" "${notary_dir}/notary-log.json"; then
+              cat "${notary_dir}/notary-log.json"
+            else
+              echo "Could not retrieve the notarization log." >&2
+            fi
+          else
+            echo "notarytool response:" >&2
+            cat "${notary_dir}/submit.json" >&2 || true
+          fi
+
+          if [ "${submit_exit}" -ne 0 ] || [ "${status}" != "Accepted" ]; then
+            echo "Notarization did not succeed (status: ${status:-<unknown>}); not publishing." >&2
+            exit 1
+          fi
+
+      - name: Staple and verify notarized Meth.app
+        run: |
+          set -euo pipefail
+          xcrun stapler staple dist/Meth.app
+          xcrun stapler validate dist/Meth.app
+          codesign --verify --deep --strict --verbose=2 dist/Meth.app
+          spctl --assess --type execute --verbose=4 dist/Meth.app
+
+      - name: Create and verify final Meth.zip from stapled app
+        run: |
+          set -euo pipefail
+          ./scripts/package_zip.sh
+
+          # Check what users will actually download: the extracted app must carry the
+          # stapled ticket and pass Gatekeeper.
+          check_dir="${RUNNER_TEMP}/meth-notary/final-zip-check"
+          rm -rf "${check_dir}"
+          mkdir -p "${check_dir}"
+          ditto -x -k dist/Meth.zip "${check_dir}"
+          xcrun stapler validate "${check_dir}/Meth.app"
+          codesign --verify --deep --strict --verbose=2 "${check_dir}/Meth.app"
+          spctl --assess --type execute --verbose=4 "${check_dir}/Meth.app"
+          rm -rf "${check_dir}"
+
+      - name: Name release assets
+        run: |
+          set -euo pipefail
+          mv dist/Meth.zip "dist/Meth-${VERSION}.zip"
+          (cd dist && shasum -a 256 "Meth-${VERSION}.zip" > SHA256SUMS.txt)
+          cat dist/SHA256SUMS.txt
+
+      - name: Remove temporary signing and notarization material
+        if: always()
+        run: |
+          signing_dir="${RUNNER_TEMP}/meth-signing"
+          keychain_path="${signing_dir}/signing.keychain-db"
+          if [ -f "${keychain_path}" ]; then
+            security delete-keychain "${keychain_path}" || true
+          fi
+          rm -rf "${signing_dir}" "${RUNNER_TEMP}/meth-notary"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: |
+            dist/Meth-${{ needs.prepare.outputs.version }}.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  # Creates the annotated tag and the GitHub Release from the notarized artifact. The only
+  # job with write access; it has no signing or notarization secrets.
+  publish:
+    name: Publish GitHub Release
+    needs: [prepare, package-signed]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+          path: notes
+
+      - name: Verify release assets
+        run: |
+          set -euo pipefail
+          test -s "dist/Meth-${VERSION}.zip"
+          test -s notes/release_notes.md
+          (cd dist && sha256sum -c SHA256SUMS.txt)
+          unzip -tq "dist/Meth-${VERSION}.zip"
+
+      - name: Create annotated tag
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          # Re-checked here with write access, which also reveals draft releases.
+          state="$(./scripts/check_release_state.sh "${tag}" "${GITHUB_SHA}")"
+          if [ "${state}" = "resume" ]; then
+            echo "Tag ${tag} already points at ${GITHUB_SHA}; not re-creating it."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${tag}" -m "Meth ${VERSION}" "${GITHUB_SHA}"
+          # Plain push, never --force: fails instead of moving a tag that appeared meanwhile.
+          git push origin "refs/tags/${tag}"
+
+      # If this step fails, the tag pushed above remains. Re-running the workflow resumes
+      # from here (see the failure semantics at the top of this file).
+      - name: Create GitHub Release
+        run: |
+          set -euo pipefail
+          gh release create "v${VERSION}" \
+            "dist/Meth-${VERSION}.zip" \
+            dist/SHA256SUMS.txt \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag \
+            --title "Meth ${VERSION}" \
+            --notes-file notes/release_notes.md \
+            --latest
+
+      - name: Verify published release
+        run: |
+          set -euo pipefail
+          view_json="$(gh release view "v${VERSION}" --repo "${GITHUB_REPOSITORY}" --json name,tagName,isDraft,isPrerelease,assets)"
+          echo "${view_json}" | jq -e --arg version "${VERSION}" '
+            .name == ("Meth " + $version)
+            and .tagName == ("v" + $version)
+            and .isDraft == false
+            and .isPrerelease == false
+            and ([.assets[].name] | index("Meth-" + $version + ".zip") != null)
+            and ([.assets[].name] | index("SHA256SUMS.txt") != null)
+          ' >/dev/null || { echo "::error::Published release does not look as expected: ${view_json}"; exit 1; }
+          echo "Published Meth ${VERSION}: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/v${VERSION}"

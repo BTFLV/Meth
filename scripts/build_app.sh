@@ -10,6 +10,17 @@ APP_BUNDLE="${DIST_DIR}/Meth.app"
 MACOS_DIR="${APP_BUNDLE}/Contents/MacOS"
 RESOURCES_DIR="${APP_BUNDLE}/Contents/Resources"
 
+# Version metadata. The public version comes from .release-version (validated by
+# release_metadata.sh); the build number is the commit count, which only grows along
+# main's history. Shallow or non-git checkouts (e.g. PR CI) use build number 0.
+VERSION="$("${SCRIPT_DIR}/release_metadata.sh" version)"
+if [ "$(git -C "${ROOT_DIR}" rev-parse --is-shallow-repository 2>/dev/null || echo true)" = "false" ]; then
+  BUILD_NUMBER="$(git -C "${ROOT_DIR}" rev-list --count HEAD)"
+else
+  BUILD_NUMBER=0
+fi
+echo "==> Meth ${VERSION} (build ${BUILD_NUMBER})"
+
 ARM64_DIR=".build/arm64-apple-macosx/release"
 X86_64_DIR=".build/x86_64-apple-macosx/release"
 
@@ -43,6 +54,8 @@ sed \
   -e "s/\$(EXECUTABLE_NAME)/Meth/g" \
   -e "s/\$(PRODUCT_BUNDLE_IDENTIFIER)/com.meth.app/g" \
   -e "s/\$(PRODUCT_NAME)/Meth/g" \
+  -e "s/\$(MARKETING_VERSION)/${VERSION}/g" \
+  -e "s/\$(CURRENT_PROJECT_VERSION)/${BUILD_NUMBER}/g" \
   "${ROOT_DIR}/Sources/Meth/Resources/Info.plist" > "${APP_BUNDLE}/Contents/Info.plist"
 printf "APPL????" > "${APP_BUNDLE}/Contents/PkgInfo"
 
@@ -129,6 +142,14 @@ done
 plutil -lint "${APP_BUNDLE}/Contents/Info.plist" >/dev/null
 identifier="$(plutil -extract CFBundleIdentifier raw "${APP_BUNDLE}/Contents/Info.plist")"
 [ "${identifier}" = "com.meth.app" ] || { echo "Unexpected CFBundleIdentifier: ${identifier}" >&2; exit 1; }
+short_version="$(plutil -extract CFBundleShortVersionString raw "${APP_BUNDLE}/Contents/Info.plist")"
+[ "${short_version}" = "${VERSION}" ] || { echo "Unexpected CFBundleShortVersionString: ${short_version}" >&2; exit 1; }
+bundle_version="$(plutil -extract CFBundleVersion raw "${APP_BUNDLE}/Contents/Info.plist")"
+[ "${bundle_version}" = "${BUILD_NUMBER}" ] || { echo "Unexpected CFBundleVersion: ${bundle_version}" >&2; exit 1; }
+if grep -q '\$(' "${APP_BUNDLE}/Contents/Info.plist"; then
+  echo "Info.plist still contains unsubstituted build variables" >&2
+  exit 1
+fi
 
 # Zip packaging lives in its own script so CI can re-create the zip after notarization and
 # stapling without rebuilding.
