@@ -39,6 +39,11 @@ lid shut.
   low-battery safety cutoff and a crash-recovery watchdog (see below).
 - **Launch at Login**, backed by `SMAppService`.
 - **Extend** a running timed session by 15 minutes or 1 hour from the menu.
+- **Session details** in the menu: the remaining time, when the session ends, and whether
+  the display may sleep.
+- **Sleep status warning**: if system sleep is disabled while no Closed-Lid session is
+  running (for example after a failed restore, or set by another tool), the menu says so
+  and offers **Restore Normal Sleep…**.
 
 ### Menu bar icon
 
@@ -63,7 +68,8 @@ different, privileged mechanism: the kernel's `SleepDisabled` parameter, toggled
 `pmset -a disablesleep`.
 
 Because this requires administrator privileges, Meth uses the narrowest mechanism that
-gets the job done:
+gets the job done. Closed-Lid Mode therefore needs an **administrator account**; standard
+accounts can still use every other feature.
 
 - The Meth process itself **never runs as root** and there is **no background daemon or
   helper process** that runs continuously.
@@ -87,8 +93,10 @@ Meth's own records indicate *it* was the one that enabled it. If `SleepDisabled`
 already enabled for some other reason (another tool, or an administrator), Meth leaves it
 untouched rather than guessing. Recovery is best effort: it cannot succeed in every
 failure mode (for example, if the privileged rule itself has become unusable when
-recovery is attempted). If sleep stays disabled, `sudo pmset -a disablesleep 0` restores
-it.
+recovery is attempted). Whenever system sleep is disabled outside a Closed-Lid session,
+whatever the cause, the Meth menu shows **System Sleep Is Disabled** with a **Restore
+Normal Sleep…** action, which asks for administrator authentication if the rule cannot
+be used. `sudo pmset -a disablesleep 0` in Terminal does the same.
 
 **Thermal and battery safety.** Closed-Lid Mode keeps the CPU, memory, and fans active
 with the lid shut, which increases heat and battery use. Meth refuses to *start* a
@@ -104,7 +112,9 @@ place an actively running, closed MacBook in an enclosed bag or unventilated spa
   `/usr/bin/pmset -a disablesleep 0|1` commands, run through `sudo -n` without a shell.
 - Installing and removing Closed-Lid support each run one short, fixed shell script as
   root through the standard macOS administrator prompt (AppleScript's `do shell script …
-  with administrator privileges`). The scripts contain no user-supplied input.
+  with administrator privileges`), as does Restore Normal Sleep when the rule cannot be
+  used (it runs only `pmset -a disablesleep 0`). The scripts contain no user-supplied
+  input.
 - The sudoers rule is written to a temporary, root-owned file first, validated with
   `visudo -c -f`, and only then atomically renamed into place — it is never written
   through a redirection at its final path.
@@ -120,7 +130,9 @@ place an actively running, closed MacBook in an enclosed bag or unventilated spa
 
 1. Download `Meth-<version>.zip` from the [latest release](https://github.com/BTFLV/Meth/releases/latest).
 2. Unzip it and move `Meth.app` to your **Applications** folder.
-3. Open `Meth.app`. Meth runs in the menu bar only; it has no Dock icon.
+3. Open `Meth.app`. Meth runs in the menu bar only; it has no Dock icon. Opening the app
+   again while it runs shows its Settings window, which helps if the menu bar icon is
+   hidden (for example behind the notch).
 
 Official releases are signed with an Apple Developer ID Application certificate and
 notarized by Apple, so macOS opens them after its usual confirmation for apps downloaded
@@ -137,8 +149,11 @@ shasum -a 256 -c SHA256SUMS.txt
 - **Closed-Lid Support** (only if you use Closed-Lid Mode): an administrator password
   prompt, once, when you click **Install Support** in **Settings → Closed-Lid Support**,
   and again if you later click **Remove Support**.
+- **Restore Normal Sleep…** (only if system sleep is stuck disabled and Meth's rule
+  cannot be used): an administrator password prompt.
 - **Launch at Login** (only if you enable it): macOS may show a notification that a login
-  item was added. It is listed under **System Settings → General → Login Items**.
+  item was added. It is listed under **System Settings → General → Login Items**; if you
+  turn Meth off there, Settings shows a shortcut to turn it back on.
 
 Meth uses no APIs that require Accessibility, Full Disk Access, notification, or network
 permissions.

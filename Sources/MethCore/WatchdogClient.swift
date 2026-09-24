@@ -91,39 +91,13 @@ public final class WatchdogClient: @unchecked Sendable {
         watchdogProcess = nil
     }
 
+    /// The helper shipped next to the main executable: `Contents/MacOS` in the app bundle,
+    /// or the same build directory for SwiftPM builds. Deliberately never a location derived
+    /// from the working directory, which the process launching Meth controls.
     public static func locateWatchdogBinary() -> URL? {
-        let fm = FileManager.default
-
-        // 1. Inside App Bundle Contents/MacOS/MethWatchdog
-        if let execURL = Bundle.main.executableURL {
-            let candidate = execURL.deletingLastPathComponent().appendingPathComponent("MethWatchdog")
-            if fm.isExecutableFile(atPath: candidate.path) {
-                return candidate
-            }
-        }
-
-        // 2. In bundle resources
-        if let resURL = Bundle.main.resourceURL {
-            let candidate = resURL.appendingPathComponent("MethWatchdog")
-            if fm.isExecutableFile(atPath: candidate.path) {
-                return candidate
-            }
-        }
-
-        // 3. Current working directory or build products directory
-        let cwdCandidate = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent(".build/debug/MethWatchdog")
-        if fm.isExecutableFile(atPath: cwdCandidate.path) {
-            return cwdCandidate
-        }
-
-        let releaseCandidate = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            .appendingPathComponent(".build/release/MethWatchdog")
-        if fm.isExecutableFile(atPath: releaseCandidate.path) {
-            return releaseCandidate
-        }
-
-        return nil
+        guard let executableURL = Bundle.main.executableURL else { return nil }
+        let candidate = executableURL.deletingLastPathComponent().appendingPathComponent("MethWatchdog")
+        return FileManager.default.isExecutableFile(atPath: candidate.path) ? candidate : nil
     }
 }
 

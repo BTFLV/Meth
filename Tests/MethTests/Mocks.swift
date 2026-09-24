@@ -123,6 +123,11 @@ final class MockClosedLidPrivilegedService: ClosedLidPrivilegedManaging, @unchec
     /// Simulates a privileged revert that fails (e.g. the sudoers rule became unusable),
     /// which must never be reported to the user as a clean stop.
     var disableShouldFail: Bool = false
+    /// When set, `disableSleepDisabled()` blocks until the semaphore is signalled, so tests
+    /// can act while a Closed-Lid deactivation is still in progress.
+    var disableGate: DispatchSemaphore?
+    var administratorRestoreCallsCount: Int = 0
+    var administratorRestoreError: ClosedLidError?
 
     func supportStatus() -> ClosedLidSupportStatus {
         lock.lock()
@@ -136,18 +141,26 @@ final class MockClosedLidPrivilegedService: ClosedLidPrivilegedManaging, @unchec
         return sleepDisabled
     }
 
+    // Like the real service, enabling records Meth's ownership before mutating, and a
+    // successful revert clears it.
     func enableSleepDisabled() throws {
         lock.lock()
         defer { lock.unlock() }
         guard status == .installed else { throw ClosedLidError.supportNotInstalled }
+        ownershipMarkerSet = true
         sleepDisabled = true
         enableCallsCount += 1
     }
 
     func disableSleepDisabled() throws {
         lock.lock()
-        defer { lock.unlock() }
         disableCallsCount += 1
+        let gate = disableGate
+        lock.unlock()
+        gate?.wait()
+
+        lock.lock()
+        defer { lock.unlock() }
         if disableShouldFail {
             throw ClosedLidError.executionFailed(
                 command: "sudo -n pmset -a disablesleep 0",
@@ -156,6 +169,7 @@ final class MockClosedLidPrivilegedService: ClosedLidPrivilegedManaging, @unchec
             )
         }
         sleepDisabled = false
+        ownershipMarkerSet = false
     }
 
     func putDisplayToSleep() {
@@ -177,6 +191,17 @@ final class MockClosedLidPrivilegedService: ClosedLidPrivilegedManaging, @unchec
         sleepDisabled = false
     }
 
+    func restoreSleepDisabledWithAdministratorPrivileges() throws {
+        lock.lock()
+        defer { lock.unlock() }
+        administratorRestoreCallsCount += 1
+        if let administratorRestoreError {
+            throw administratorRestoreError
+        }
+        sleepDisabled = false
+        ownershipMarkerSet = false
+    }
+
     @discardableResult
     func restoreSleepDisabledForFailsafe(maxAttempts: Int) -> Bool {
         lock.lock()
@@ -184,6 +209,7 @@ final class MockClosedLidPrivilegedService: ClosedLidPrivilegedManaging, @unchec
         restoreFailsafeCallsCount += 1
         if restoreFailsafeResult {
             sleepDisabled = false
+            ownershipMarkerSet = false
         }
         return restoreFailsafeResult
     }
@@ -224,3 +250,25 @@ final class RecordingProcessExecutor: ProcessExecuting, @unchecked Sendable {
     }
 }
 
+
+/// Records the scripts `ClosedLidPrivilegedService` would run through the administrator
+/// prompt instead of running them.
+final class RecordingAdministratorRunner: AdministratorScriptRunning, @unchecked Sendable {
+    private let lock = NSLock()
+    private(set) var commands: [String] = []
+    var error: AdministratorScriptError?
+
+    func runAsAdministrator(_ shellCommand: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        commands.append(shellCommand)
+        if let error {
+            throw error
+        }
+    }
+}
+
+/// A `pmset -g live` reply reporting the given `SleepDisabled` value.
+func pmsetLiveOutput(sleepDisabled: Bool) -> String {
+    "System-wide power settings:\n SleepDisabled\t\t\(sleepDisabled ? 1 : 0)\n"
+}

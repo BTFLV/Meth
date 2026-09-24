@@ -107,7 +107,8 @@ final class ClosedLidControllerTests: XCTestCase {
 
     func testLowBatteryTriggersSafetyCutoff() async throws {
         let expectation = expectation(description: "Low battery cutoff callback")
-        await controller.setLowBatteryCutoffHandler {
+        await controller.setLowBatteryCutoffHandler { sleepRestored in
+            XCTAssertTrue(sleepRestored)
             expectation.fulfill()
         }
 
@@ -196,7 +197,8 @@ final class ClosedLidControllerTests: XCTestCase {
         try await controller.activate()
 
         let expectation = expectation(description: "Integrity failure callback")
-        await controller.setIntegrityFailureHandler { _ in
+        await controller.setIntegrityFailureHandler { _, sleepRestored in
+            XCTAssertTrue(sleepRestored)
             expectation.fulfill()
         }
 
@@ -211,5 +213,106 @@ final class ClosedLidControllerTests: XCTestCase {
         await fulfillment(of: [expectation], timeout: 1.0)
         let active = await controller.isClosedLidActive
         XCTAssertFalse(active, "A reassertion failure with support gone must not leave the session claiming to be active.")
+    }
+
+    /// A failed revert command does not by itself mean sleep is still disabled: macOS may
+    /// already have cleared the flag (for example after support was removed). Reporting that
+    /// as a failure told users sleep might be stuck when it was not.
+    func testDeactivationCountsAnAlreadyClearedFlagAsRestored() async throws {
+        try await controller.activate()
+        mockPrivileged.sleepDisabled = false
+        mockPrivileged.disableShouldFail = true
+
+        let restored = await controller.deactivate()
+
+        XCTAssertTrue(restored)
+        mockPrivileged.disableShouldFail = false
+    }
+
+    func testWatchdogTimeoutUpdateNeverActivatesClosedLidMode() async {
+        await controller.updateWatchdogTimeout(900)
+
+        let active = await controller.isClosedLidActive
+        XCTAssertFalse(active, "Extending a session must never switch Closed-Lid Mode on.")
+        XCTAssertFalse(mockPrivileged.sleepDisabled)
+        XCTAssertEqual(mockPrivileged.enableCallsCount, 0)
+    }
+
+    func testLowBatteryCutoffReportsWhenSleepCouldNotBeRestored() async throws {
+        let expectation = expectation(description: "Low battery cutoff callback")
+        await controller.setLowBatteryCutoffHandler { sleepRestored in
+            XCTAssertFalse(sleepRestored)
+            expectation.fulfill()
+        }
+        try await controller.activate()
+        mockPrivileged.disableShouldFail = true
+
+        mockSource.triggerPowerChange(
+            PowerSourceState(hasExternalPower: false, isCharging: false, batteryLevel: 8, isLowBattery: true)
+        )
+
+        await fulfillment(of: [expectation], timeout: 1.0)
+        XCTAssertTrue(mockPrivileged.sleepDisabled)
+        mockPrivileged.disableShouldFail = false
+    }
+
+    func testSleepDisabledOutsideSessionIsOnlyReportedWhileInactive() async throws {
+        mockPrivileged.sleepDisabled = true
+        var outside = await controller.isSleepDisabledOutsideSession()
+        XCTAssertTrue(outside)
+
+        try await controller.activate()
+        outside = await controller.isSleepDisabledOutsideSession()
+        XCTAssertFalse(outside, "An active Closed-Lid session is expected to disable sleep.")
+
+        await controller.deactivate()
+        outside = await controller.isSleepDisabledOutsideSession()
+        XCTAssertFalse(outside)
+    }
+
+    func testRestoreNormalSleepUsesTheInstalledRuleWithoutPrompting() async throws {
+        mockPrivileged.sleepDisabled = true
+
+        try await controller.restoreNormalSleep()
+
+        XCTAssertFalse(mockPrivileged.sleepDisabled)
+        XCTAssertEqual(mockPrivileged.restoreFailsafeCallsCount, 1)
+        XCTAssertEqual(mockPrivileged.administratorRestoreCallsCount, 0)
+    }
+
+    func testRestoreNormalSleepFallsBackToAdministratorPromptWithoutAUsableRule() async throws {
+        mockPrivileged.sleepDisabled = true
+        mockPrivileged.status = .notInstalled
+
+        try await controller.restoreNormalSleep()
+
+        XCTAssertFalse(mockPrivileged.sleepDisabled)
+        XCTAssertEqual(mockPrivileged.administratorRestoreCallsCount, 1)
+
+        // Also when the rule is installed but no longer works.
+        mockPrivileged.sleepDisabled = true
+        mockPrivileged.status = .installed
+        mockPrivileged.restoreFailsafeResult = false
+        try await controller.restoreNormalSleep()
+        XCTAssertEqual(mockPrivileged.administratorRestoreCallsCount, 2)
+    }
+
+    func testRestoreNormalSleepIsRefusedDuringAClosedLidSession() async throws {
+        try await controller.activate()
+
+        do {
+            try await controller.restoreNormalSleep()
+            XCTFail("Expected restore to be refused while a Closed-Lid session is active")
+        } catch {
+            XCTAssertEqual(error as? ClosedLidError, .activeSessionInProgress)
+        }
+        XCTAssertTrue(mockPrivileged.sleepDisabled)
+    }
+
+    func testRestoreNormalSleepDoesNothingWhenSleepIsNotDisabled() async throws {
+        try await controller.restoreNormalSleep()
+
+        XCTAssertEqual(mockPrivileged.restoreFailsafeCallsCount, 0)
+        XCTAssertEqual(mockPrivileged.administratorRestoreCallsCount, 0)
     }
 }

@@ -9,17 +9,27 @@ public final class PowerSourceMonitor: PowerSourceMonitoring, @unchecked Sendabl
     private var _currentState: PowerSourceState = .unknown
     private var runLoopSource: CFRunLoopSource?
     private var isMonitoring = false
+    private let stateProvider: @Sendable () -> PowerSourceState
 
     public var onPowerSourceChange: (@Sendable (PowerSourceState) -> Void)?
 
+    /// The cached value is only kept current by change notifications while monitoring.
+    /// Otherwise it could be hours old (captured at launch or during an earlier session), so a
+    /// fresh reading is taken instead: Closed-Lid activation checks the battery through this
+    /// property *before* monitoring starts.
     public var currentState: PowerSourceState {
         lock.lock()
         defer { lock.unlock() }
+        if !isMonitoring {
+            _currentState = stateProvider()
+        }
         return _currentState
     }
 
-    public init() {
-        self._currentState = Self.queryCurrentPowerState()
+    /// - Parameter stateProvider: reads the current power source state; injectable for tests.
+    public init(stateProvider: @escaping @Sendable () -> PowerSourceState = { PowerSourceMonitor.queryCurrentPowerState() }) {
+        self.stateProvider = stateProvider
+        self._currentState = stateProvider()
     }
 
     deinit {
@@ -33,7 +43,7 @@ public final class PowerSourceMonitor: PowerSourceMonitoring, @unchecked Sendabl
             return
         }
         isMonitoring = true
-        _currentState = Self.queryCurrentPowerState()
+        _currentState = stateProvider()
         lock.unlock()
 
         let refCon = Unmanaged.passUnretained(self).toOpaque()
@@ -43,6 +53,10 @@ public final class PowerSourceMonitor: PowerSourceMonitoring, @unchecked Sendabl
             monitor.handlePowerSourceNotification()
         }, refCon)?.takeRetainedValue() else {
             logger.error("Failed to create IOPSNotification run loop source")
+            // Without notifications the cache would go stale; keep reading live instead.
+            lock.lock()
+            isMonitoring = false
+            lock.unlock()
             return
         }
 
@@ -68,7 +82,7 @@ public final class PowerSourceMonitor: PowerSourceMonitoring, @unchecked Sendabl
     }
 
     private func handlePowerSourceNotification() {
-        let newState = Self.queryCurrentPowerState()
+        let newState = stateProvider()
         lock.lock()
         guard _currentState != newState else {
             lock.unlock()
@@ -118,7 +132,7 @@ public final class PowerSourceMonitor: PowerSourceMonitoring, @unchecked Sendabl
             }
         }
 
-        let isLow = (batteryLevel ?? 100) <= 10 && !hasExternalPower
+        let isLow = (batteryLevel ?? 100) <= PowerSourceState.lowBatteryThreshold && !hasExternalPower
 
         return PowerSourceState(
             hasExternalPower: hasExternalPower,

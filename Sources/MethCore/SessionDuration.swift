@@ -59,8 +59,10 @@ public enum SessionDuration: Equatable, Hashable, Sendable {
         return candidate
     }
 
+    /// Formats a countdown as `MM:SS` or `HH:MM:SS`. Partial seconds round up, so a
+    /// 5-minute session starts at 05:00 and its final second reads 00:01.
     public static func formatRemaining(seconds: TimeInterval) -> String {
-        let totalSeconds = max(0, Int(seconds))
+        let totalSeconds = max(0, Int(seconds.rounded(.up)))
         let hours = totalSeconds / 3600
         let minutes = (totalSeconds % 3600) / 60
         let secs = totalSeconds % 60
@@ -71,5 +73,35 @@ public enum SessionDuration: Equatable, Hashable, Sendable {
             return String(format: "%02d:%02d", minutes, secs)
         }
     }
-}
 
+    /// Describes a point in time relative to `now` -- "today at 14:35", "tomorrow at 09:00",
+    /// or "Sep 26 at 09:00" -- with the time and date in the user's locale.
+    public static func describeTime(
+        _ date: Date,
+        relativeTo now: Date = Date(),
+        calendar: Calendar = .current,
+        locale: Locale = .current
+    ) -> String {
+        let timeFormatter = DateFormatter()
+        timeFormatter.calendar = calendar
+        timeFormatter.timeZone = calendar.timeZone
+        timeFormatter.locale = locale
+        timeFormatter.dateStyle = .none
+        timeFormatter.timeStyle = .short
+        let time = timeFormatter.string(from: date)
+
+        if calendar.isDate(date, inSameDayAs: now) {
+            return "today at \(time)"
+        }
+        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
+           calendar.isDate(date, inSameDayAs: tomorrow) {
+            return "tomorrow at \(time)"
+        }
+        let dayFormatter = DateFormatter()
+        dayFormatter.calendar = calendar
+        dayFormatter.timeZone = calendar.timeZone
+        dayFormatter.locale = locale
+        dayFormatter.setLocalizedDateFormatFromTemplate("MMMd")
+        return "\(dayFormatter.string(from: date)) at \(time)"
+    }
+}

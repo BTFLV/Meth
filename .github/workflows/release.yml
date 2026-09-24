@@ -39,14 +39,14 @@ jobs:
   prepare:
     name: Prepare release
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       version: ${{ steps.metadata.outputs.version }}
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -75,7 +75,7 @@ jobs:
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "Preparing Meth ${version} (${tag}) from ${GITHUB_SHA} (state: ${state})."
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: release-notes
           path: release_notes.md
@@ -103,7 +103,7 @@ jobs:
       VERSION: ${{ needs.prepare.outputs.version }}
     steps:
       # Full history so build_app.sh can derive the build number from the commit count.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -278,7 +278,7 @@ jobs:
           fi
           rm -rf "${signing_dir}" "${RUNNER_TEMP}/meth-notary"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: release-assets
           path: |
@@ -293,7 +293,7 @@ jobs:
     name: Publish GitHub Release
     needs: [prepare, package-signed]
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: write
@@ -301,16 +301,16 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       VERSION: ${{ needs.prepare.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: release-assets
           path: dist
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: release-notes
           path: notes

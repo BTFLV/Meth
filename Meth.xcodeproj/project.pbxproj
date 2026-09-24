@@ -12,6 +12,7 @@
 		112D26D97EFB204FB656D7BE /* WatchdogClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82FD92B6077FB4C064725C3A /* WatchdogClient.swift */; };
 		21372C6E1A5EAAB4D7B316FE /* libMethCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = FC38B24B46269C5D46DA47E0 /* libMethCore.a */; };
 		2B73BF0A500D69263A8EBAC8 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA769E8B692D9161A9370A81 /* MenuBarController.swift */; };
+		30D786AB7FCD22F0EA6FFD48 /* PowerSourceMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54023EAE6DA3A95E72537CF5 /* PowerSourceMonitorTests.swift */; };
 		4277C74EFCA4E0801B30817C /* SessionManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7782DF7DFC7AEF7676FA65 /* SessionManagerTests.swift */; };
 		432441B423244F620E1717C5 /* PowerSourceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8443921F24F63AC93D6424 /* PowerSourceMonitor.swift */; };
 		4FAF0CDB9565496B38F58162 /* UntilTimePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 175E08B67D338F7BB6C90045 /* UntilTimePickerView.swift */; };
@@ -86,6 +87,7 @@
 		3CACE8205D6E8EBDC3B511B1 /* LidStateMonitoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LidStateMonitoring.swift; sourceTree = "<group>"; };
 		3F73B409CD68C78132AB7849 /* SessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManager.swift; sourceTree = "<group>"; };
 		42D3226DB1A30E1F1E0D7A04 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
+		54023EAE6DA3A95E72537CF5 /* PowerSourceMonitorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerSourceMonitorTests.swift; sourceTree = "<group>"; };
 		5B77942C01CF7B4A0A27B3FC /* MethWatchdog */ = {isa = PBXFileReference; includeInIndex = 0; path = MethWatchdog; sourceTree = BUILT_PRODUCTS_DIR; };
 		5EB56F2D4949E4CF09605BDA /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		7AA8F516070ECB8610D55A86 /* AuxiliaryWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuxiliaryWindowController.swift; sourceTree = "<group>"; };
@@ -202,6 +204,7 @@
 				E1BA9A3D650514BC0BB73EAA /* ClosedLidPrivilegedServiceTests.swift */,
 				0A2DDCA755DE9FD46C58E4D4 /* FailsafeRecoveryTests.swift */,
 				89C25C38274CFC4BBD518EF9 /* Mocks.swift */,
+				54023EAE6DA3A95E72537CF5 /* PowerSourceMonitorTests.swift */,
 				EE7782DF7DFC7AEF7676FA65 /* SessionManagerTests.swift */,
 				24801E506F4ED69D1794FDC7 /* SessionTests.swift */,
 				97FE010A40CF2BC1A2557E15 /* WatchdogClientTests.swift */,
@@ -437,6 +440,7 @@
 				A050F343C0B014336DF5BD96 /* ClosedLidPrivilegedServiceTests.swift in Sources */,
 				E26E9BAD4E04072681C2AEB0 /* FailsafeRecoveryTests.swift in Sources */,
 				8BF0D3DE75548D71384456A0 /* Mocks.swift in Sources */,
+				30D786AB7FCD22F0EA6FFD48 /* PowerSourceMonitorTests.swift in Sources */,
 				4277C74EFCA4E0801B30817C /* SessionManagerTests.swift in Sources */,
 				0BCBAE5440498343252B1CD5 /* SessionTests.swift in Sources */,
 				7BFC556B01D2816A52F8A1E6 /* WatchdogClientTests.swift in Sources */,

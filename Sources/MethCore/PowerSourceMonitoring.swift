@@ -1,6 +1,10 @@
 import Foundation
 
 public struct PowerSourceState: Equatable, Sendable {
+    /// Battery percentage at or below which Closed-Lid Mode refuses to start, and stops,
+    /// while the Mac is not connected to power.
+    public static let lowBatteryThreshold = 10
+
     public let hasExternalPower: Bool
     public let isCharging: Bool
     public let batteryLevel: Int?

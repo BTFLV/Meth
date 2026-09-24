@@ -27,15 +27,17 @@ public actor ClosedLidController {
 
     private var state: State = .inactive
 
-    /// Invoked when a low-battery safety cutoff stops an active session. Fire-and-forget
-    /// by design; the receiver is expected to hop back to its own isolation if needed.
-    private var onLowBatteryCutoff: (@Sendable () -> Void)?
+    /// Invoked when a low-battery safety cutoff stops an active session, with whether normal
+    /// sleep behavior was actually restored. Fire-and-forget by design; the receiver is
+    /// expected to hop back to its own isolation if needed.
+    private var onLowBatteryCutoff: (@Sendable (_ sleepRestored: Bool) -> Void)?
 
     /// Invoked when Closed-Lid Mode can no longer guarantee protection while a session is
     /// still nominally active (for example, support was removed or reassertion failed
     /// repeatedly). The controller deactivates itself before calling this so the caller
-    /// never has to reconcile "active" state with a mechanism that has already failed.
-    private var onIntegrityFailure: (@Sendable (String) -> Void)?
+    /// never has to reconcile "active" state with a mechanism that has already failed; the
+    /// second argument reports whether normal sleep behavior was restored.
+    private var onIntegrityFailure: (@Sendable (_ reason: String, _ sleepRestored: Bool) -> Void)?
 
     public init(
         privilegedService: any ClosedLidPrivilegedManaging = ClosedLidPrivilegedService.shared,
@@ -76,11 +78,11 @@ public actor ClosedLidController {
         privilegedService.supportStatus()
     }
 
-    public func setLowBatteryCutoffHandler(_ handler: @escaping @Sendable () -> Void) {
+    public func setLowBatteryCutoffHandler(_ handler: @escaping @Sendable (_ sleepRestored: Bool) -> Void) {
         onLowBatteryCutoff = handler
     }
 
-    public func setIntegrityFailureHandler(_ handler: @escaping @Sendable (String) -> Void) {
+    public func setIntegrityFailureHandler(_ handler: @escaping @Sendable (_ reason: String, _ sleepRestored: Bool) -> Void) {
         onIntegrityFailure = handler
     }
 
@@ -136,11 +138,18 @@ public actor ClosedLidController {
         logger.info("Closed-Lid Mode successfully activated.")
     }
 
+    /// Re-arms the watchdog with a new time limit after the session was extended. Does
+    /// nothing unless Closed-Lid Mode is currently active: an extension must never (re-)enable
+    /// it, for example when it races with the session being stopped.
+    public func updateWatchdogTimeout(_ timeoutSeconds: Int?) {
+        guard state == .active else { return }
+        watchdogClient.start(timeoutSeconds: timeoutSeconds)
+    }
+
     /// - Returns: `true` if normal sleep behavior is known to be restored (including when
-    ///   Closed-Lid Mode was not active to begin with). `false` means the privileged revert
-    ///   failed and the Mac may still be unable to sleep; the watchdog is deliberately left
-    ///   running in that case, and callers should tell the user rather than reporting a
-    ///   clean stop.
+    ///   Closed-Lid Mode was not active to begin with). `false` means the Mac may still be
+    ///   unable to sleep; the watchdog is deliberately left running in that case, and callers
+    ///   should tell the user rather than reporting a clean stop.
     @discardableResult
     public func deactivate() -> Bool {
         guard state == .active || state == .activating else { return true }
@@ -149,20 +158,74 @@ public actor ClosedLidController {
         lidMonitor.stopMonitoring()
         powerMonitor.stopMonitoring()
 
-        var restored = false
+        let restored = revertSleepDisabled()
+        state = .inactive
+        return restored
+    }
+
+    private func revertSleepDisabled() -> Bool {
         do {
             try privilegedService.disableSleepDisabled()
             logger.info("Closed-Lid Mode deactivated and SleepDisabled reverted.")
-            // Only torn down once restoration actually succeeded: if it failed, the
-            // watchdog is left running as a continued safety net rather than removing the
-            // one thing that might still recover the Mac later.
-            watchdogClient.stop()
-            restored = true
         } catch {
             logger.error("Error reverting SleepDisabled: \(error.localizedDescription)")
+            // What matters is the resulting state, not the command: macOS may already have
+            // cleared the flag, e.g. after support was removed and powerd reset it.
+            guard !privilegedService.isSleepDisabled() else {
+                // The watchdog stays running as a safety net rather than removing the one
+                // thing that might still recover the Mac later.
+                return false
+            }
+            privilegedService.clearOwnershipMarker()
         }
-        state = .inactive
-        return restored
+        watchdogClient.stop()
+        return true
+    }
+
+    /// Launch-time recovery for a `SleepDisabled` state left over from an ungraceful exit.
+    /// Only acts on state Meth believes it owns (see
+    /// `ClosedLidPrivilegedManaging.isOwnershipMarkerSet`), so a value left by another tool
+    /// or an administrator is never clobbered. Runs on this actor so it can never interleave
+    /// with an activation and revert a session that has just been started.
+    public func performStartupRecovery() {
+        guard state == .inactive else { return }
+        guard privilegedService.isOwnershipMarkerSet() else {
+            if privilegedService.isSleepDisabled() {
+                logger.notice("SleepDisabled is currently enabled but not owned by Meth; leaving system state untouched.")
+            }
+            return
+        }
+        if privilegedService.isSleepDisabled() {
+            logger.warning("Startup recovery: reverting Meth-owned SleepDisabled state left over from a previous session.")
+            privilegedService.restoreSleepDisabledForFailsafe(maxAttempts: 3)
+        } else {
+            privilegedService.clearOwnershipMarker()
+        }
+    }
+
+    /// Whether system sleep is disabled even though no Closed-Lid session is active here:
+    /// a revert that failed, a leftover Meth could not recover, or another tool's setting.
+    public func isSleepDisabledOutsideSession() -> Bool {
+        state == .inactive && privilegedService.isSleepDisabled()
+    }
+
+    /// Turns `SleepDisabled` off at the user's explicit request, whoever set it. Uses the
+    /// installed rule when it works; otherwise macOS asks for administrator authentication
+    /// once to run the same fixed `pmset` command. Refused while a Closed-Lid session is
+    /// active, which should be stopped instead.
+    public func restoreNormalSleep() throws {
+        guard state == .inactive else {
+            throw ClosedLidError.activeSessionInProgress
+        }
+        guard privilegedService.isSleepDisabled() else { return }
+
+        if privilegedService.supportStatus() == .installed,
+           privilegedService.restoreSleepDisabledForFailsafe(maxAttempts: 2) {
+            watchdogClient.stop()
+            return
+        }
+        try privilegedService.restoreSleepDisabledWithAdministratorPrivileges()
+        watchdogClient.stop()
     }
 
     /// Removing privileged support must never be allowed to happen underneath an active
@@ -196,8 +259,8 @@ public actor ClosedLidController {
 
         if newState.isLowBattery {
             logger.warning("Battery reached low threshold while in Closed-Lid Mode. Triggering safety cutoff.")
-            deactivate()
-            onLowBatteryCutoff?()
+            let restored = deactivate()
+            onLowBatteryCutoff?(restored)
             return
         }
 
@@ -214,8 +277,8 @@ public actor ClosedLidController {
                 // Support disappeared out from under an active session: fail safe instead
                 // of silently continuing to claim Closed-Lid protection.
                 let reason = "Closed-Lid support became unavailable while a session was active."
-                deactivate()
-                onIntegrityFailure?(reason)
+                let restored = deactivate()
+                onIntegrityFailure?(reason, restored)
             }
         }
     }

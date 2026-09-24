@@ -98,4 +98,30 @@ final class SessionTests: XCTestCase {
         XCTAssertEqual(SessionDuration.formatRemaining(seconds: 125), "02:05")
         XCTAssertEqual(SessionDuration.formatRemaining(seconds: 3665), "01:01:05")
     }
+
+    /// The countdown rounds partial seconds up, so a 5-minute session starts at 05:00 and the
+    /// final second reads 00:01 instead of 00:00.
+    func testFormatRemainingRoundsPartialSecondsUp() {
+        XCTAssertEqual(SessionDuration.formatRemaining(seconds: 299.6), "05:00")
+        XCTAssertEqual(SessionDuration.formatRemaining(seconds: 0.2), "00:01")
+        XCTAssertEqual(SessionDuration.formatRemaining(seconds: 0), "00:00")
+        XCTAssertEqual(SessionDuration.formatRemaining(seconds: -3), "00:00")
+        XCTAssertEqual(SessionDuration.formatRemaining(seconds: 3599.5), "01:00:00")
+    }
+
+    func testDescribeTime() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let locale = Locale(identifier: "en_US_POSIX")
+        let now = calendar.date(from: DateComponents(year: 2026, month: 9, day: 24, hour: 22, minute: 0))!
+
+        let laterToday = calendar.date(byAdding: .minute, value: 90, to: now)!
+        let tomorrow = calendar.date(byAdding: .hour, value: 11, to: now)!
+        let inTwoDays = calendar.date(byAdding: .day, value: 2, to: now)!
+
+        XCTAssertTrue(SessionDuration.describeTime(laterToday, relativeTo: now, calendar: calendar, locale: locale).hasPrefix("today at "))
+        XCTAssertTrue(SessionDuration.describeTime(tomorrow, relativeTo: now, calendar: calendar, locale: locale).hasPrefix("tomorrow at "))
+        let later = SessionDuration.describeTime(inTwoDays, relativeTo: now, calendar: calendar, locale: locale)
+        XCTAssertTrue(later.hasPrefix("Sep 26 at "), later)
+    }
 }

@@ -36,9 +36,64 @@ public struct SystemProcessExecutor: ProcessExecuting {
     }
 }
 
+/// Runs a fixed shell command as root after macOS asks the user for administrator
+/// authentication. A seam so tests can verify the exact privileged scripts without running
+/// them.
+public protocol AdministratorScriptRunning: Sendable {
+    func runAsAdministrator(_ shellCommand: String) throws
+}
+
+public enum AdministratorScriptError: Error, Equatable {
+    case cancelled
+    case failed(String)
+}
+
+/// Runs the command through AppleScript's `do shell script … with administrator
+/// privileges`, which shows the standard macOS authentication prompt.
+public struct AppleScriptAdministratorRunner: AdministratorScriptRunning {
+    /// AppleScript's "User canceled." error.
+    private static let userCancelledErrorNumber = -128
+
+    public init() {}
+
+    public func runAsAdministrator(_ shellCommand: String) throws {
+        // NSAppleScript may only be used on the main thread, while callers run on the
+        // Closed-Lid controller's executor. Hopping over synchronously cannot deadlock: the
+        // main thread only ever awaits that executor, it never blocks on it.
+        if Thread.isMainThread {
+            try Self.run(shellCommand)
+        } else {
+            try DispatchQueue.main.sync { try Self.run(shellCommand) }
+        }
+    }
+
+    private static func run(_ shellCommand: String) throws {
+        let escaped = shellCommand
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let script = "do shell script \"\(escaped)\" with administrator privileges"
+
+        guard let appleScript = NSAppleScript(source: script) else {
+            throw AdministratorScriptError.failed("Failed to initialize AppleScript runner.")
+        }
+
+        var scriptError: NSDictionary?
+        appleScript.executeAndReturnError(&scriptError)
+        if let scriptError {
+            if (scriptError[NSAppleScript.errorNumber] as? Int) == userCancelledErrorNumber {
+                throw AdministratorScriptError.cancelled
+            }
+            let message = scriptError[NSAppleScript.errorMessage] as? String ?? "Unknown error"
+            throw AdministratorScriptError.failed(message)
+        }
+    }
+}
+
 /// Owns every interaction with the privileged `SleepDisabled` mechanism used by Closed-Lid
-/// Mode. All state-mutating operations run a single, fixed `pmset` command via `sudo -n`
-/// (never a generic shell), and status queries never execute a mutating command.
+/// Mode. During normal use, state-mutating operations run a single, fixed `pmset` command
+/// via `sudo -n` (never a shell), and status queries never execute a mutating command.
+/// Installing and removing support, and restoring sleep without a usable rule, each run one
+/// fixed script through the administrator authentication prompt instead.
 public final class ClosedLidPrivilegedService: ClosedLidPrivilegedManaging, @unchecked Sendable {
     public static let shared = ClosedLidPrivilegedService()
 
@@ -54,15 +109,18 @@ public final class ClosedLidPrivilegedService: ClosedLidPrivilegedManaging, @unc
     private let sudoersFilePath: String
     private let executor: any ProcessExecuting
     private let ownershipDefaults: UserDefaults
+    private let administratorRunner: any AdministratorScriptRunning
 
     public init(
         sudoersFilePath: String = ClosedLidPrivilegedService.defaultSudoersFilePath,
         executor: any ProcessExecuting = SystemProcessExecutor(),
-        ownershipDefaults: UserDefaults = ClosedLidSharedState.defaults
+        ownershipDefaults: UserDefaults = ClosedLidSharedState.defaults,
+        administratorRunner: any AdministratorScriptRunning = AppleScriptAdministratorRunner()
     ) {
         self.sudoersFilePath = sudoersFilePath
         self.executor = executor
         self.ownershipDefaults = ownershipDefaults
+        self.administratorRunner = administratorRunner
     }
 
     // MARK: - Status (read-only)
@@ -83,11 +141,15 @@ public final class ClosedLidPrivilegedService: ClosedLidPrivilegedManaging, @unc
             return .invalidConfiguration("Sudoers file does not have the expected 0440 permissions.")
         }
 
-        // Non-mutating: `sudo -n -l <command>` reports whether the command would be
-        // permitted without a password, but never executes it.
+        // Non-mutating: `sudo -n -l <command>` never executes the command. It succeeds only
+        // if sudoers parses, some NOPASSWD rule applies to this account (so listing needs no
+        // password), and the command is permitted at all -- for an administrator possibly by
+        // the password-protected `%admin ALL=(ALL) ALL` rule rather than Meth's. Combined
+        // with the root-owned 0440 file above, that is the strongest check available without
+        // running `pmset`; an unusable rule still surfaces as a failure when enabling.
         guard isCommandPermitted(arguments: ["-a", "disablesleep", "1"]),
               isCommandPermitted(arguments: ["-a", "disablesleep", "0"]) else {
-            return .invalidConfiguration("Required pmset commands are not authorized without a password.")
+            return .invalidConfiguration("This account cannot use the installed rule without a password. Closed-Lid Mode requires an administrator account.")
         }
 
         return .installed
@@ -241,10 +303,10 @@ public final class ClosedLidPrivilegedService: ClosedLidPrivilegedManaging, @unc
         """
 
         do {
-            try runAsAdministrator(shellCommand)
+            try administratorRunner.runAsAdministrator(shellCommand)
         } catch {
-            logger.error("Installation failed: \(error.localizedDescription)")
-            throw ClosedLidError.installationFailed(error.localizedDescription)
+            logger.error("Installation failed: \(String(describing: error))")
+            throw Self.administratorError(error, wrap: ClosedLidError.installationFailed)
         }
 
         guard supportStatus() == .installed else {
@@ -264,10 +326,10 @@ public final class ClosedLidPrivilegedService: ClosedLidPrivilegedManaging, @unc
 
         // 2. Remove the sudoers file under a single administrator authorization.
         do {
-            try runAsAdministrator("rm -f '\(sudoersFilePath)'")
+            try administratorRunner.runAsAdministrator("rm -f '\(sudoersFilePath)'")
         } catch {
-            logger.error("Uninstallation failed: \(error.localizedDescription)")
-            throw ClosedLidError.uninstallationFailed(error.localizedDescription)
+            logger.error("Uninstallation failed: \(String(describing: error))")
+            throw Self.administratorError(error, wrap: ClosedLidError.uninstallationFailed)
         }
 
         // 3. Verify removal; never report success unless the file is actually gone.
@@ -279,21 +341,30 @@ public final class ClosedLidPrivilegedService: ClosedLidPrivilegedManaging, @unc
         logger.info("Closed-Lid support uninstalled successfully.")
     }
 
-    private func runAsAdministrator(_ shellCommand: String) throws {
-        let escaped = shellCommand
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        let script = "do shell script \"\(escaped)\" with administrator privileges"
-
-        guard let appleScript = NSAppleScript(source: script) else {
-            throw ClosedLidError.installationFailed("Failed to initialize AppleScript runner.")
+    public func restoreSleepDisabledWithAdministratorPrivileges() throws {
+        do {
+            try administratorRunner.runAsAdministrator("\(Self.pmsetPath) -a disablesleep 0")
+        } catch {
+            logger.error("Restoring normal sleep failed: \(String(describing: error))")
+            throw Self.administratorError(error, wrap: ClosedLidError.restoreFailed)
         }
+        guard !isSleepDisabled() else {
+            throw ClosedLidError.restoreFailed("System sleep is still disabled.")
+        }
+        clearOwnershipMarker()
+        logger.info("Normal sleep restored with administrator authentication.")
+    }
 
-        var scriptError: NSDictionary?
-        appleScript.executeAndReturnError(&scriptError)
-        if let scriptError {
-            let message = scriptError[NSAppleScript.errorMessage] as? String ?? "Unknown error"
-            throw ClosedLidError.installationFailed(message)
+    /// Maps a failed administrator script to a single user-facing error: a dismissed
+    /// authentication prompt is reported as such, never as a failure of the operation.
+    private static func administratorError(_ error: Error, wrap: (String) -> ClosedLidError) -> ClosedLidError {
+        switch error {
+        case AdministratorScriptError.cancelled:
+            return .authorizationCancelled
+        case AdministratorScriptError.failed(let message):
+            return wrap(message)
+        default:
+            return wrap(error.localizedDescription)
         }
     }
 }

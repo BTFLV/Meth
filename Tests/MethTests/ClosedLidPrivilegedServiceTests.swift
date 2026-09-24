@@ -163,4 +163,103 @@ final class ClosedLidPrivilegedServiceTests: XCTestCase {
             XCTAssertEqual(service.isSleepDisabled(), expected, "pmset output: \(output.debugDescription)")
         }
     }
+
+    private func makeService(
+        sleepDisabled: Bool = false,
+        runner: RecordingAdministratorRunner
+    ) -> (ClosedLidPrivilegedService, String) {
+        let sudoersPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("meth-test-sudoers-\(UUID().uuidString)").path
+        let executor = RecordingProcessExecutor()
+        executor.resultProvider = { _, arguments in
+            arguments.contains("live") ? (0, pmsetLiveOutput(sleepDisabled: sleepDisabled), "") : (0, "", "")
+        }
+        let service = ClosedLidPrivilegedService(
+            sudoersFilePath: sudoersPath,
+            executor: executor,
+            ownershipDefaults: UserDefaults(suiteName: UUID().uuidString)!,
+            administratorRunner: runner
+        )
+        return (service, sudoersPath)
+    }
+
+    func testInstallRunsOneValidatedAtomicScriptForTheFixedRule() {
+        let runner = RecordingAdministratorRunner()
+        let (service, sudoersPath) = makeService(runner: runner)
+
+        // The recording runner installs nothing, so validation afterwards must fail loudly.
+        XCTAssertThrowsError(try service.installSupport()) { error in
+            XCTAssertEqual(
+                error as? ClosedLidError,
+                .installationFailed("Support was installed but validation did not confirm it is usable.")
+            )
+        }
+
+        XCTAssertEqual(runner.commands.count, 1)
+        let script = runner.commands.first ?? ""
+        XCTAssertTrue(script.contains("/usr/bin/mktemp '\(sudoersPath).XXXXXX'"))
+        XCTAssertTrue(script.contains("'%admin ALL=(root) NOPASSWD: /usr/bin/pmset -a disablesleep 0, /usr/bin/pmset -a disablesleep 1'"))
+        XCTAssertTrue(script.contains("chmod 0440 \"$TMP\""))
+        XCTAssertTrue(script.contains("chown root:wheel \"$TMP\""))
+        XCTAssertTrue(script.contains("/usr/sbin/visudo -c -f \"$TMP\""))
+        XCTAssertTrue(script.contains("mv -f \"$TMP\" '\(sudoersPath)'"))
+    }
+
+    func testCancelledAuthenticationIsReportedAsSuch() {
+        let runner = RecordingAdministratorRunner()
+        runner.error = .cancelled
+        let (service, _) = makeService(runner: runner)
+
+        XCTAssertThrowsError(try service.installSupport()) { error in
+            XCTAssertEqual(error as? ClosedLidError, .authorizationCancelled)
+        }
+        XCTAssertThrowsError(try service.uninstallSupport()) { error in
+            XCTAssertEqual(error as? ClosedLidError, .authorizationCancelled)
+        }
+        XCTAssertThrowsError(try service.restoreSleepDisabledWithAdministratorPrivileges()) { error in
+            XCTAssertEqual(error as? ClosedLidError, .authorizationCancelled)
+        }
+    }
+
+    /// Regression test: script failures used to be wrapped twice, producing messages like
+    /// "Failed to install Closed-Lid support: Failed to install Closed-Lid support: …".
+    func testAdministratorScriptFailuresAreDescribedOnce() {
+        let runner = RecordingAdministratorRunner()
+        runner.error = .failed("The operation failed.")
+        let (service, _) = makeService(runner: runner)
+
+        XCTAssertThrowsError(try service.installSupport()) { error in
+            XCTAssertEqual(error.localizedDescription, "Failed to install Closed-Lid support: The operation failed.")
+        }
+        XCTAssertThrowsError(try service.uninstallSupport()) { error in
+            XCTAssertEqual(error.localizedDescription, "Failed to remove Closed-Lid support: The operation failed.")
+        }
+    }
+
+    func testUninstallRemovesOnlyTheRuleFile() throws {
+        let runner = RecordingAdministratorRunner()
+        let (service, sudoersPath) = makeService(runner: runner)
+
+        try service.uninstallSupport()
+
+        XCTAssertEqual(runner.commands, ["rm -f '\(sudoersPath)'"])
+    }
+
+    func testAdministratorRestoreRunsOnlyTheFixedPmsetCommand() throws {
+        let runner = RecordingAdministratorRunner()
+        let (service, _) = makeService(sleepDisabled: false, runner: runner)
+
+        try service.restoreSleepDisabledWithAdministratorPrivileges()
+
+        XCTAssertEqual(runner.commands, ["/usr/bin/pmset -a disablesleep 0"])
+    }
+
+    func testAdministratorRestoreFailsIfSleepIsStillDisabled() {
+        let runner = RecordingAdministratorRunner()
+        let (service, _) = makeService(sleepDisabled: true, runner: runner)
+
+        XCTAssertThrowsError(try service.restoreSleepDisabledWithAdministratorPrivileges()) { error in
+            XCTAssertEqual(error as? ClosedLidError, .restoreFailed("System sleep is still disabled."))
+        }
+    }
 }

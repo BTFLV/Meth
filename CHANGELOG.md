@@ -7,6 +7,52 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-24
+
+### Added
+
+- The menu shows when a running session ends and whether the display may sleep; sessions
+  without a time limit show when they started.
+- If system sleep is disabled while no Closed-Lid session is running (for example after a
+  failed restore, or set by another tool), the menu says so and offers **Restore Normal
+  Sleep…**. It uses Closed-Lid support when installed and otherwise asks for
+  administrator authentication.
+- The Until… time picker shows whether the chosen time is today or tomorrow.
+- Opening Meth while it is already running shows its Settings window, which helps when
+  the menu bar icon is hidden, for example behind the notch.
+- Settings explains when macOS blocks Launch at Login and links to the Login Items
+  settings.
+
+### Changed
+
+- Settings shows why Closed-Lid support needs attention, including that Closed-Lid Mode
+  requires an administrator account.
+- Cancelling an administrator password prompt is no longer reported as an error.
+- Opening a second copy of Meth while one is running now quits the new copy with an
+  explanation instead of running both.
+
+### Fixed
+
+- Closed-Lid Mode could start with the battery already at 10% or below, because Meth
+  checked a battery reading taken when it launched.
+- Extending a session while it was being stopped, for example just as it expired, could
+  turn Closed-Lid Mode back on with no session left to turn it off.
+- When Closed-Lid Mode was stopped automatically (low battery, or support removed) but
+  normal sleep could not be restored, Meth reported a clean stop instead of warning.
+- Meth's launch-time recovery could undo a Closed-Lid session started while the check was
+  still running.
+- Stopping Closed-Lid Mode was reported as failed when sleep had in fact already been
+  restored.
+- Installing or removing Closed-Lid support ran AppleScript off the main thread, which
+  macOS does not support, and its error messages repeated their prefix.
+- The countdown starts at the full duration (for example 05:00) instead of one second
+  less.
+
+### Security
+
+- The crash-recovery watchdog is only ever launched from inside the app bundle, never
+  from a location that depends on the working directory.
+
 ## [1.0.0] - 2026-09-23
 
 First stable release.
@@ -52,5 +98,6 @@ First stable release.
   `sudoers.d` rule; installing or removing that rule runs a fixed script as root after an
   administrator password prompt.
 
-[Unreleased]: https://github.com/BTFLV/Meth/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/BTFLV/Meth/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/BTFLV/Meth/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/BTFLV/Meth/releases/tag/v1.0.0
