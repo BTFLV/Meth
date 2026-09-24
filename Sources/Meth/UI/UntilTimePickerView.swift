@@ -25,10 +25,13 @@ public struct UntilTimePickerView: View {
             .datePickerStyle(.stepperField)
             .labelsHidden()
 
-            Text("Session will keep your Mac awake until the selected time.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
+            // A time that has already passed today means tomorrow; say which one it is.
+            TimelineView(.everyMinute) { _ in
+                Text("Ends \(SessionDuration.describeTime(resolvedEndDate()))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
 
             HStack(spacing: 12) {
                 Button("Cancel") {
@@ -37,17 +40,22 @@ public struct UntilTimePickerView: View {
                 .keyboardShortcut(.cancelAction)
 
                 Button("Start Session") {
-                    let cal = Calendar.current
-                    let hour = cal.component(.hour, from: selectedDate)
-                    let min = cal.component(.minute, from: selectedDate)
-                    let target = SessionDuration.nextDate(hour: hour, minute: min)
-                    onConfirm(target)
+                    onConfirm(resolvedEndDate())
                 }
                 .keyboardShortcut(.defaultAction)
             }
         }
         .padding(24)
         .frame(width: 280)
+    }
+
+    /// The next occurrence of the selected clock time: today if it is still ahead,
+    /// otherwise tomorrow.
+    private func resolvedEndDate() -> Date {
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: selectedDate)
+        let minute = calendar.component(.minute, from: selectedDate)
+        return SessionDuration.nextDate(hour: hour, minute: minute)
     }
 }
 

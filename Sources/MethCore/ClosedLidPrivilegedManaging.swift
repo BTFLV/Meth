@@ -7,13 +7,16 @@ public enum ClosedLidError: Error, Equatable, LocalizedError {
     case executionFailed(command: String, exitCode: Int32, stderr: String)
     case installationFailed(String)
     case uninstallationFailed(String)
+    /// The user dismissed the macOS administrator authentication prompt.
+    case authorizationCancelled
+    case restoreFailed(String)
 
     public var errorDescription: String? {
         switch self {
         case .supportNotInstalled:
             return "Closed-Lid support is not installed. Please install it in Settings."
         case .activeSessionInProgress:
-            return "Stop the active Closed-Lid session before removing Closed-Lid support."
+            return "Stop the active Closed-Lid session first."
         case .batteryTooLow(let level):
             let reading = level.map { "\($0)%" } ?? "below the safety threshold"
             return "Closed-Lid Mode was not started: the battery is at \(reading) and the Mac is not connected to power. Connect a power adapter and try again."
@@ -23,6 +26,10 @@ public enum ClosedLidError: Error, Equatable, LocalizedError {
             return "Failed to install Closed-Lid support: \(reason)"
         case .uninstallationFailed(let reason):
             return "Failed to remove Closed-Lid support: \(reason)"
+        case .authorizationCancelled:
+            return "Administrator authentication was cancelled."
+        case .restoreFailed(let reason):
+            return "Failed to restore normal sleep: \(reason)"
         }
     }
 }
@@ -53,6 +60,11 @@ public protocol ClosedLidPrivilegedManaging: AnyObject, Sendable {
     func putDisplayToSleep()
     func installSupport() throws
     func uninstallSupport() throws
+
+    /// Turns `SleepDisabled` off by running the fixed `pmset -a disablesleep 0` command after
+    /// macOS asks for administrator authentication, for when the installed rule is missing
+    /// or unusable. Only ever used at the user's explicit request.
+    func restoreSleepDisabledWithAdministratorPrivileges() throws
 
     /// Best-effort, retrying restoration used only by crash/timeout failsafe paths
     /// (the watchdog and startup recovery), never by interactive UI flows.

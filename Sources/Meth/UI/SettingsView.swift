@@ -5,8 +5,10 @@ import MethCore
 
 public struct SettingsView: View {
     @ObservedObject var sessionManager = SessionManager.shared
-    @State private var launchAtLogin: Bool = false
-    @State private var supportStatus: ClosedLidSupportStatus = .notInstalled
+    @State private var loginItemStatus: SMAppService.Status = SMAppService.mainApp.status
+    @State private var loginItemMessage: String?
+    /// `nil` until the first status check has finished.
+    @State private var supportStatus: ClosedLidSupportStatus?
     @State private var actionMessage: String?
     @State private var isProcessing: Bool = false
 
@@ -16,13 +18,37 @@ public struct SettingsView: View {
         sessionManager.activeSession?.closedLidMode ?? false
     }
 
+    /// On while Meth is registered as a login item, including while macOS still needs the
+    /// user's approval for it in System Settings.
+    private var launchAtLogin: Binding<Bool> {
+        Binding(
+            get: { loginItemStatus == .enabled || loginItemStatus == .requiresApproval },
+            set: { updateLaunchAtLogin($0) }
+        )
+    }
+
     public var body: some View {
         Form {
             Section("General") {
-                Toggle("Launch at Login", isOn: $launchAtLogin)
-                    .onChange(of: launchAtLogin) { newValue in
-                        updateLaunchAtLogin(newValue)
+                Toggle("Launch at Login", isOn: launchAtLogin)
+
+                if loginItemStatus == .requiresApproval {
+                    HStack {
+                        Text("macOS is blocking Meth from opening at login. Allow it in System Settings → General → Login Items.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Button("Open Login Items") {
+                            SMAppService.openSystemSettingsLoginItems()
+                        }
                     }
+                }
+
+                if let message = loginItemMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
 
                 Toggle("Allow Display Sleep by default", isOn: $sessionManager.defaultAllowDisplaySleep)
 
@@ -55,8 +81,14 @@ public struct SettingsView: View {
                         Button("Install Support") {
                             installSupport()
                         }
-                        .disabled(isProcessing)
+                        .disabled(isProcessing || supportStatus == nil)
                     }
+                }
+
+                if case .invalidConfiguration(let reason) = supportStatus {
+                    Text(reason)
+                        .font(.caption)
+                        .foregroundColor(.orange)
                 }
 
                 if isClosedLidSessionActive {
@@ -79,14 +111,22 @@ public struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 480, height: 400)
         .onAppear {
-            checkLaunchAtLoginStatus()
-            checkSupportStatus()
+            refreshStatus()
+        }
+        // Either status may have been changed outside Meth (e.g. in System Settings) while
+        // this window stayed open.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshStatus()
         }
     }
 
     @ViewBuilder
     private var statusLabel: some View {
         switch supportStatus {
+        case nil:
+            Text("Checking…")
+                .font(.callout)
+                .foregroundColor(.secondary)
         case .installed:
             Text("Installed")
                 .font(.callout.bold())
@@ -102,34 +142,24 @@ public struct SettingsView: View {
         }
     }
 
-    private func checkLaunchAtLoginStatus() {
-        if #available(macOS 13.0, *) {
-            launchAtLogin = SMAppService.mainApp.status == .enabled
-        }
-    }
-
     private func updateLaunchAtLogin(_ enable: Bool) {
-        if #available(macOS 13.0, *) {
-            do {
-                if enable {
-                    if SMAppService.mainApp.status != .enabled {
-                        try SMAppService.mainApp.register()
-                    }
-                } else {
-                    if SMAppService.mainApp.status == .enabled {
-                        try SMAppService.mainApp.unregister()
-                    }
-                }
-            } catch {
-                actionMessage = "Couldn't update Launch at Login: \(error.localizedDescription)"
+        loginItemMessage = nil
+        do {
+            if enable {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
             }
-            // Always resync with the real system state rather than trusting the toggle's
-            // optimistic value, so the UI never claims a registration that didn't happen.
-            checkLaunchAtLoginStatus()
+        } catch {
+            loginItemMessage = "Couldn't update Launch at Login: \(error.localizedDescription)"
         }
+        // Always resync with the real system state rather than trusting the toggle's
+        // optimistic value, so the UI never claims a registration that didn't happen.
+        loginItemStatus = SMAppService.mainApp.status
     }
 
-    private func checkSupportStatus() {
+    private func refreshStatus() {
+        loginItemStatus = SMAppService.mainApp.status
         Task {
             let status = await sessionManager.closedLidSupportStatus()
             await MainActor.run {
@@ -151,10 +181,7 @@ public struct SettingsView: View {
                     self.actionMessage = "Closed-Lid support installed successfully."
                 }
             } catch {
-                await MainActor.run {
-                    self.isProcessing = false
-                    self.actionMessage = error.localizedDescription
-                }
+                await finishFailedAction(error)
             }
         }
     }
@@ -172,11 +199,19 @@ public struct SettingsView: View {
                     self.actionMessage = "Closed-Lid support removed successfully."
                 }
             } catch {
-                await MainActor.run {
-                    self.isProcessing = false
-                    self.actionMessage = error.localizedDescription
-                }
+                await finishFailedAction(error)
             }
+        }
+    }
+
+    private func finishFailedAction(_ error: Error) async {
+        // Validation after a failed or partial attempt may have changed the status too.
+        let status = await sessionManager.closedLidSupportStatus()
+        await MainActor.run {
+            self.isProcessing = false
+            self.supportStatus = status
+            // Dismissing the authentication prompt is a choice, not an error.
+            self.actionMessage = (error as? ClosedLidError) == .authorizationCancelled ? nil : error.localizedDescription
         }
     }
 }

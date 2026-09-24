@@ -51,6 +51,14 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
                 self?.presentAutomaticStopAlert(reason: reason)
             }
             .store(in: &cancellables)
+
+        sessionManager.$isSleepDisabledOutsideSession
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.rebuildMenu()
+            }
+            .store(in: &cancellables)
     }
 
     private func updateIcon() {
@@ -61,11 +69,19 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
 
     public func menuWillOpen(_ menu: NSMenu) {
         rebuildMenu()
+        // Something else may have changed the system-wide setting since the last check; the
+        // menu updates in place if the answer differs.
+        Task { await sessionManager.refreshSleepState() }
     }
 
     private func rebuildMenu() {
         guard let menu = statusItem.menu else { return }
         menu.removeAllItems()
+
+        let closedLidSessionActive = sessionManager.activeSession?.closedLidMode ?? false
+        if sessionManager.isSleepDisabledOutsideSession && !closedLidSessionActive {
+            addSleepDisabledWarning(to: menu)
+        }
 
         if let session = sessionManager.activeSession {
             buildActiveMenu(menu, session: session)
@@ -103,11 +119,16 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
             menu.addItem(remItem)
         }
 
-        if session.closedLidMode {
-            let clItem = NSMenuItem(title: "Closed-Lid Mode: Enabled", action: nil, keyEquivalent: "")
-            clItem.isEnabled = false
-            menu.addItem(clItem)
+        if let endDate = sessionManager.sessionEndDate {
+            addInfoItem(to: menu, title: "Ends \(SessionDuration.describeTime(endDate))")
+        } else {
+            addInfoItem(to: menu, title: "No time limit — started \(SessionDuration.describeTime(session.startDate))")
         }
+
+        if session.closedLidMode {
+            addInfoItem(to: menu, title: "Closed-Lid Mode: Enabled")
+        }
+        addInfoItem(to: menu, title: session.allowDisplaySleep ? "Display Sleep: Allowed" : "Display Sleep: Prevented")
 
         menu.addItem(NSMenuItem.separator())
 
@@ -180,6 +201,28 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         closedLidItem.target = self
         closedLidItem.state = sessionManager.defaultClosedLidMode ? .on : .off
         menu.addItem(closedLidItem)
+    }
+
+    private func addInfoItem(to menu: NSMenu, title: String) {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        menu.addItem(item)
+    }
+
+    /// Shown when system sleep is disabled although no Closed-Lid session is running: after
+    /// a revert that failed, a leftover Meth could not recover, or another tool's setting.
+    /// Without it the menu bar would show "inactive" while the Mac cannot sleep at all.
+    private func addSleepDisabledWarning(to menu: NSMenu) {
+        let warning = NSMenuItem(title: "System Sleep Is Disabled", action: nil, keyEquivalent: "")
+        warning.image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "Warning")
+        warning.toolTip = "Your Mac will not sleep, even with the lid closed, until normal sleep is restored."
+        warning.isEnabled = false
+        menu.addItem(warning)
+
+        let restore = NSMenuItem(title: "Restore Normal Sleep…", action: #selector(restoreNormalSleep), keyEquivalent: "")
+        restore.target = self
+        menu.addItem(restore)
+        menu.addItem(NSMenuItem.separator())
     }
 
     private func addDurationItem(to menu: NSMenu, title: String, duration: SessionDuration) {
@@ -284,6 +327,21 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     private func runAlert(_ alert: NSAlert) -> NSApplication.ModalResponse {
         NSApp.activate(ignoringOtherApps: true)
         return alert.runModal()
+    }
+
+    @objc private func restoreNormalSleep() {
+        Task { @MainActor in
+            do {
+                try await sessionManager.restoreNormalSleep()
+            } catch ClosedLidError.authorizationCancelled {
+                // The user dismissed the authentication prompt; nothing to report.
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "Couldn't Restore Normal Sleep"
+                alert.informativeText = "\(error.localizedDescription)\n\nTo restore it manually, run \"sudo pmset -a disablesleep 0\" in Terminal."
+                runAlert(alert)
+            }
+        }
     }
 
     @objc private func stopSession() {

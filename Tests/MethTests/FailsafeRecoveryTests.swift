@@ -91,4 +91,31 @@ final class FailsafeRecoveryTests: XCTestCase {
         XCTAssertEqual(mockPrivileged.restoreFailsafeCallsCount, 0)
         XCTAssertEqual(mockPrivileged.disableCallsCount, 0)
     }
+
+    /// Regression test: launch-time recovery ran on a detached task, unsynchronized with
+    /// Closed-Lid activation, so a session started while recovery was still running could
+    /// have its freshly enabled SleepDisabled reverted underneath it.
+    func testStartupRecoveryNeverRevertsAnActiveClosedLidSession() async throws {
+        let mockPrivileged = MockClosedLidPrivilegedService()
+        let controller = ClosedLidController(
+            privilegedService: mockPrivileged,
+            lidMonitor: MockLidStateMonitor(),
+            powerMonitor: MockPowerSourceMonitor(),
+            watchdogClient: makeIsolatedWatchdogClient()
+        )
+        let sessionManager = SessionManager(
+            powerAssertionManager: MockPowerAssertionManager(),
+            closedLidController: controller,
+            privilegedService: mockPrivileged
+        )
+
+        try await sessionManager.startSession(duration: .preset(600), allowDisplaySleep: true, closedLidMode: true)
+        XCTAssertTrue(mockPrivileged.ownershipMarkerSet)
+
+        await sessionManager.performStartupRecovery().value
+
+        XCTAssertTrue(mockPrivileged.sleepDisabled, "Recovery must leave an active Closed-Lid session alone.")
+        XCTAssertEqual(mockPrivileged.restoreFailsafeCallsCount, 0)
+        await sessionManager.stopSession()
+    }
 }
