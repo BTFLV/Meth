@@ -6,6 +6,7 @@ final class ClosedLidControllerTests: XCTestCase {
     var mockPrivileged: MockClosedLidPrivilegedService!
     var mockLid: MockLidStateMonitor!
     var mockSource: MockPowerSourceMonitor!
+    var mockThermal: MockThermalStateMonitor!
     var controller: ClosedLidController!
 
     override func setUp() {
@@ -13,11 +14,13 @@ final class ClosedLidControllerTests: XCTestCase {
         mockPrivileged = MockClosedLidPrivilegedService()
         mockLid = MockLidStateMonitor()
         mockSource = MockPowerSourceMonitor()
+        mockThermal = MockThermalStateMonitor()
 
         controller = ClosedLidController(
             privilegedService: mockPrivileged,
             lidMonitor: mockLid,
             powerMonitor: mockSource,
+            thermalMonitor: mockThermal,
             watchdogClient: makeIsolatedWatchdogClient()
         )
     }
@@ -32,6 +35,7 @@ final class ClosedLidControllerTests: XCTestCase {
         XCTAssertFalse(active)
         XCTAssertFalse(mockLid.isMonitoring)
         XCTAssertFalse(mockSource.isMonitoring)
+        XCTAssertFalse(mockThermal.isMonitoring)
 
         try await controller.activate(timeoutSeconds: 300)
         active = await controller.isClosedLidActive
@@ -39,6 +43,7 @@ final class ClosedLidControllerTests: XCTestCase {
         XCTAssertTrue(mockPrivileged.sleepDisabled)
         XCTAssertTrue(mockLid.isMonitoring)
         XCTAssertTrue(mockSource.isMonitoring)
+        XCTAssertTrue(mockThermal.isMonitoring)
 
         await controller.deactivate()
         active = await controller.isClosedLidActive
@@ -46,6 +51,7 @@ final class ClosedLidControllerTests: XCTestCase {
         XCTAssertFalse(mockPrivileged.sleepDisabled)
         XCTAssertFalse(mockLid.isMonitoring)
         XCTAssertFalse(mockSource.isMonitoring)
+        XCTAssertFalse(mockThermal.isMonitoring)
     }
 
     func testFailedActivationLeavesNoStaleActiveState() async {
@@ -64,6 +70,7 @@ final class ClosedLidControllerTests: XCTestCase {
         XCTAssertEqual(state, .inactive)
         XCTAssertFalse(mockLid.isMonitoring)
         XCTAssertFalse(mockSource.isMonitoring)
+        XCTAssertFalse(mockThermal.isMonitoring)
     }
 
     func testActivationImmediatelyFollowedByStopLeavesConsistentState() async throws {
@@ -105,9 +112,16 @@ final class ClosedLidControllerTests: XCTestCase {
         XCTAssertEqual(mockPrivileged.displaySleepTriggeredCount, 1)
     }
 
+    func testActivationWhileLidAlreadyClosedImmediatelySleepsDisplay() async throws {
+        mockLid.simulatedState = .closed
+        try await controller.activate()
+        XCTAssertEqual(mockPrivileged.displaySleepTriggeredCount, 1)
+    }
+
     func testLowBatteryTriggersSafetyCutoff() async throws {
         let expectation = expectation(description: "Low battery cutoff callback")
-        await controller.setLowBatteryCutoffHandler { sleepRestored in
+        await controller.setLowBatteryCutoffHandler { threshold, sleepRestored in
+            XCTAssertEqual(threshold, 10)
             XCTAssertTrue(sleepRestored)
             expectation.fulfill()
         }
@@ -128,6 +142,40 @@ final class ClosedLidControllerTests: XCTestCase {
         await fulfillment(of: [expectation], timeout: 1.0)
         active = await controller.isClosedLidActive
         XCTAssertFalse(active)
+        XCTAssertFalse(mockPrivileged.sleepDisabled)
+    }
+
+    func testCriticalThermalPressureTriggersSafetyCutoff() async throws {
+        let expectation = expectation(description: "Thermal cutoff callback")
+        await controller.setThermalCutoffHandler { sleepRestored in
+            XCTAssertTrue(sleepRestored)
+            expectation.fulfill()
+        }
+
+        try await controller.activate()
+        var active = await controller.isClosedLidActive
+        XCTAssertTrue(active)
+
+        mockThermal.triggerThermalChange(.critical)
+
+        await fulfillment(of: [expectation], timeout: 1.0)
+        active = await controller.isClosedLidActive
+        XCTAssertFalse(active)
+        XCTAssertFalse(mockPrivileged.sleepDisabled)
+    }
+
+    func testActivationIsRefusedWhenThermalPressureIsCritical() async {
+        mockThermal.simulatedState = .critical
+
+        do {
+            try await controller.activate()
+            XCTFail("Expected activation to be refused on critical thermal pressure")
+        } catch {
+            XCTAssertEqual(error as? ClosedLidError, .thermalPressureCritical)
+        }
+
+        let state = await controller.currentState
+        XCTAssertEqual(state, .inactive)
         XCTAssertFalse(mockPrivileged.sleepDisabled)
     }
 
@@ -240,7 +288,7 @@ final class ClosedLidControllerTests: XCTestCase {
 
     func testLowBatteryCutoffReportsWhenSleepCouldNotBeRestored() async throws {
         let expectation = expectation(description: "Low battery cutoff callback")
-        await controller.setLowBatteryCutoffHandler { sleepRestored in
+        await controller.setLowBatteryCutoffHandler { _, sleepRestored in
             XCTAssertFalse(sleepRestored)
             expectation.fulfill()
         }

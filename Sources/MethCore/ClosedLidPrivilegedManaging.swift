@@ -4,6 +4,7 @@ public enum ClosedLidError: Error, Equatable, LocalizedError {
     case supportNotInstalled
     case activeSessionInProgress
     case batteryTooLow(Int?)
+    case thermalPressureCritical
     case executionFailed(command: String, exitCode: Int32, stderr: String)
     case installationFailed(String)
     case uninstallationFailed(String)
@@ -20,6 +21,8 @@ public enum ClosedLidError: Error, Equatable, LocalizedError {
         case .batteryTooLow(let level):
             let reading = level.map { "\($0)%" } ?? "below the safety threshold"
             return "Closed-Lid Mode was not started: the battery is at \(reading) and the Mac is not connected to power. Connect a power adapter and try again."
+        case .thermalPressureCritical:
+            return "Closed-Lid Mode was not started: the Mac is under critical thermal pressure. Let it cool down on a well-ventilated surface and try again."
         case .executionFailed(let command, let exitCode, let stderr):
             return "Command '\(command)' failed with code \(exitCode): \(stderr)"
         case .installationFailed(let reason):
@@ -95,6 +98,14 @@ public enum ClosedLidSharedState {
 
     public static var defaults: UserDefaults {
         UserDefaults(suiteName: suiteName) ?? .standard
+    }
+
+    public static func synchronize(_ defaults: UserDefaults = ClosedLidSharedState.defaults) {
+        if defaults === ClosedLidSharedState.defaults {
+            CFPreferencesAppSynchronize(suiteName as CFString)
+        } else {
+            defaults.synchronize()
+        }
     }
 
     /// Identifies which watchdog process is currently authorized to restore sleep state.

@@ -13,7 +13,7 @@ public enum MenuBarIcon {
     private static let canvas = NSSize(width: 18, height: 18)
     private static let outlineWidth: CGFloat = 1.4
 
-    public static func image(isActive: Bool, isClosedLid: Bool) -> NSImage {
+    public static func image(isActive: Bool, isClosedLid: Bool, hasSleepDisabledWarning: Bool = false) -> NSImage {
         let image = NSImage(size: canvas, flipped: true) { _ in
             let flask = flaskPath()
             let lip = lipPath()
@@ -38,20 +38,39 @@ public enum MenuBarIcon {
                     crystalPath().fill()
                 }
             }
+
+            if hasSleepDisabledWarning && !(isActive && isClosedLid) {
+                warningDotPath().fill()
+            }
             return true
         }
 
         image.isTemplate = true
-        image.accessibilityDescription = accessibilityDescription(isActive: isActive, isClosedLid: isClosedLid)
+        image.accessibilityDescription = accessibilityDescription(
+            isActive: isActive,
+            isClosedLid: isClosedLid,
+            hasSleepDisabledWarning: hasSleepDisabledWarning
+        )
         return image
     }
 
-    private static func accessibilityDescription(isActive: Bool, isClosedLid: Bool) -> String {
-        switch (isActive, isClosedLid) {
-        case (false, _): return "Meth — inactive"
-        case (true, false): return "Meth — keeping your Mac awake"
-        case (true, true): return "Meth — keeping your Mac awake with the lid closed"
+    private static func accessibilityDescription(isActive: Bool, isClosedLid: Bool, hasSleepDisabledWarning: Bool) -> String {
+        switch (isActive, isClosedLid, hasSleepDisabledWarning) {
+        case (_, _, true) where !(isActive && isClosedLid):
+            return "Meth — system sleep is disabled outside a Closed-Lid session"
+        case (false, _, _):
+            return "Meth — inactive"
+        case (true, false, _):
+            return "Meth — keeping your Mac awake"
+        case (true, true, _):
+            return "Meth — keeping your Mac awake with the lid closed"
         }
+    }
+
+    /// Small indicator dot in the upper-right corner when system sleep is disabled outside
+    /// a Closed-Lid session.
+    private static func warningDotPath() -> NSBezierPath {
+        NSBezierPath(ovalIn: NSRect(x: 12.6, y: 1.6, width: 3.8, height: 3.8))
     }
 
     /// Centreline of the glass outline: neck, flared body, rounded base.

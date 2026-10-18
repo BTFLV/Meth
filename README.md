@@ -35,27 +35,39 @@ lid shut.
 - **Until sessions** — stay awake until a specific clock time (e.g. "Until 23:00").
 - **Display sleep control** — optionally let the display sleep on its own schedule while
   the system stays awake.
-- **Closed-Lid Mode** — keeps the Mac running with the lid closed, with an automatic
-  low-battery safety cutoff and a crash-recovery watchdog (see below).
+- **Closed-Lid Mode** — keeps the Mac running with the lid closed, with automatic
+  low-battery and thermal safety cutoffs and a crash-recovery watchdog (see below).
+- **Live option switching** — toggle **Allow Display Sleep** or **Closed-Lid Mode** on the
+  fly while a session is already running.
+- **Quick toggle** — Option-click (`⌥`-click) or right-click the menu bar icon to start or
+  stop a session immediately.
+- **System notifications** — optional notifications before a timed session ends (with
+  quick `+15 Minutes`, `+1 Hour`, and `Stop Session` actions) and when a session stops
+  automatically.
+- **Shortcuts, URL scheme, and CLI** — built-in actions for macOS Shortcuts and Spotlight
+  (`AppIntents`), a `meth://` URL scheme (`meth://start`, `meth://stop`, `meth://toggle`,
+  `meth://extend`), and command-line arguments (`Meth start --minutes 60 --closed-lid`,
+  `Meth stop`, `Meth status`).
 - **Launch at Login**, backed by `SMAppService`.
 - **Extend** a running timed session by 15 minutes or 1 hour from the menu.
 - **Session details** in the menu: the remaining time, when the session ends, and whether
   the display may sleep.
 - **Sleep status warning**: if system sleep is disabled while no Closed-Lid session is
-  running (for example after a failed restore, or set by another tool), the menu says so
-  and offers **Restore Normal Sleep…**.
+  running (for example after a failed restore, or set by another tool), the menu bar icon
+  shows a warning dot and the menu offers **Restore Normal Sleep…**.
 
 ### Menu bar icon
 
 The status item is a template image drawn from vector paths, so it stays crisp at any
-resolution and follows the system's light/dark appearance and menu highlighting. Its three
-states are distinguishable at a glance:
+resolution and follows the system's light/dark appearance and menu highlighting. Its states
+are distinguishable at a glance:
 
 | Icon | Meaning |
 | --- | --- |
 | Empty flask | No session — your Mac sleeps normally |
 | Flask with a crystal | A keep-awake session is running |
 | Solid flask | A session is running **with Closed-Lid Mode** |
+| Flask with a corner dot | System sleep is disabled outside a Closed-Lid session |
 
 ---
 
@@ -100,9 +112,11 @@ be used. `sudo pmset -a disablesleep 0` in Terminal does the same.
 
 **Thermal and battery safety.** Closed-Lid Mode keeps the CPU, memory, and fans active
 with the lid shut, which increases heat and battery use. Meth refuses to *start* a
-Closed-Lid session while running on battery at 10% or below, and automatically stops a
-running one if the battery drops to that threshold while not connected to power. Never
-place an actively running, closed MacBook in an enclosed bag or unventilated space.
+Closed-Lid session while running on battery at or below the configured low-battery cutoff
+(10% by default, configurable up to 30% in Settings) or while the Mac is under critical
+thermal pressure, and automatically stops a running Closed-Lid session if the battery drops
+to that threshold on battery power or macOS reports critical thermal pressure. Never place
+an actively running, closed MacBook in an enclosed bag or unventilated space.
 
 ---
 

@@ -21,10 +21,25 @@ public struct SystemProcessExecutor: ProcessExecuting {
 
         do {
             try process.run()
-            process.waitUntilExit()
 
-            let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            var stdoutData = Data()
+            var stderrData = Data()
+            let group = DispatchGroup()
+
+            group.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+                group.leave()
+            }
+
+            group.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                group.leave()
+            }
+
+            group.wait()
+            process.waitUntilExit()
 
             let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
             let stderr = String(data: stderrData, encoding: .utf8) ?? ""
@@ -182,18 +197,18 @@ public final class ClosedLidPrivilegedService: ClosedLidPrivilegedManaging, @unc
     // trusting whatever each process cached at launch.
 
     public func isOwnershipMarkerSet() -> Bool {
-        ownershipDefaults.synchronize()
+        ClosedLidSharedState.synchronize(ownershipDefaults)
         return ownershipDefaults.bool(forKey: Self.ownershipMarkerKey)
     }
 
     public func clearOwnershipMarker() {
         ownershipDefaults.removeObject(forKey: Self.ownershipMarkerKey)
-        ownershipDefaults.synchronize()
+        ClosedLidSharedState.synchronize(ownershipDefaults)
     }
 
     private func setOwnershipMarker() {
         ownershipDefaults.set(true, forKey: Self.ownershipMarkerKey)
-        ownershipDefaults.synchronize()
+        ClosedLidSharedState.synchronize(ownershipDefaults)
     }
 
     // MARK: - Mutating operations

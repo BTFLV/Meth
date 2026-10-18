@@ -36,15 +36,15 @@ public struct Session: Identifiable, Equatable, Sendable {
     }
 
     /// Extends a timed session by the specified number of seconds.
-    public func extending(by seconds: TimeInterval, relativeTo now: Date = Date()) -> Session {
+    public func extending(by seconds: TimeInterval, relativeTo now: Date = Date(), remainingOverride: TimeInterval? = nil) -> Session {
         guard seconds > 0 else { return self }
         switch duration {
         case .indefinite:
             return self
         case .preset(let current):
             // If already expired, extend from now; otherwise add to remaining
-            let remaining = max(0, (startDate.addingTimeInterval(current)).timeIntervalSince(now))
-            let newDuration = remaining + seconds
+            let remaining = remainingOverride ?? max(0, (startDate.addingTimeInterval(current)).timeIntervalSince(now))
+            let newDuration = max(0, remaining) + seconds
             return Session(
                 id: id,
                 startDate: now,
@@ -62,6 +62,16 @@ public struct Session: Identifiable, Equatable, Sendable {
                 closedLidMode: closedLidMode
             )
         }
+    }
+
+    public func withOptions(allowDisplaySleep: Bool? = nil, closedLidMode: Bool? = nil) -> Session {
+        Session(
+            id: id,
+            startDate: startDate,
+            duration: duration,
+            allowDisplaySleep: allowDisplaySleep ?? self.allowDisplaySleep,
+            closedLidMode: closedLidMode ?? self.closedLidMode
+        )
     }
 }
 

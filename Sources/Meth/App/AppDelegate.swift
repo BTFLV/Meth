@@ -26,8 +26,16 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // Perform fail-safe startup recovery in case of previous ungraceful shutdown
         SessionManager.shared.performStartupRecovery()
 
+        NotificationService.shared.configure()
+
         // Initialize menu bar status item and UI
         self.menuBarController = MenuBarController()
+    }
+
+    public func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            MethURLRouter.handle(url)
+        }
     }
 
     /// Opening Meth again (from Finder, Spotlight, or Launchpad) while it is running would

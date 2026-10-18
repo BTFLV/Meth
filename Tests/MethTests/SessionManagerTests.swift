@@ -332,4 +332,44 @@ final class SessionManagerTests: XCTestCase {
         try await sessionManager.startSession(duration: .until(target), allowDisplaySleep: true, closedLidMode: false)
         XCTAssertEqual(sessionManager.sessionEndDate, target)
     }
+
+    func testLiveTogglingOptionsDuringActiveSession() async throws {
+        try await sessionManager.startSession(duration: .preset(600), allowDisplaySleep: true, closedLidMode: false)
+        XCTAssertEqual(mockPower.activeCount, 1)
+        var closedLidActive = await closedLidController.isClosedLidActive
+        XCTAssertFalse(closedLidActive)
+
+        // Toggle display sleep off while running -> acquires display sleep assertion
+        await sessionManager.setAllowDisplaySleep(false)
+        XCTAssertEqual(sessionManager.activeSession?.allowDisplaySleep, false)
+        XCTAssertEqual(mockPower.activeCount, 2)
+
+        // Toggle Closed-Lid Mode on while running -> activates controller
+        try await sessionManager.setClosedLidMode(true)
+        XCTAssertEqual(sessionManager.activeSession?.closedLidMode, true)
+        closedLidActive = await closedLidController.isClosedLidActive
+        XCTAssertTrue(closedLidActive)
+        XCTAssertTrue(mockPrivileged.sleepDisabled)
+
+        // Toggle Closed-Lid Mode off while running -> deactivates controller without stopping session
+        try await sessionManager.setClosedLidMode(false)
+        XCTAssertTrue(sessionManager.isSessionActive)
+        XCTAssertEqual(sessionManager.activeSession?.closedLidMode, false)
+        closedLidActive = await closedLidController.isClosedLidActive
+        XCTAssertFalse(closedLidActive)
+        XCTAssertFalse(mockPrivileged.sleepDisabled)
+    }
+
+    func testDisplayAssertionIsReleasedWhileLidIsClosedAndRestoredWhenOpened() async throws {
+        try await sessionManager.startSession(duration: .preset(600), allowDisplaySleep: false, closedLidMode: true)
+        XCTAssertEqual(mockPower.activeCount, 2)
+
+        mockLid.triggerStateChange(.closed)
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(mockPower.activeCount, 1, "Display assertion must be released when lid closes.")
+
+        mockLid.triggerStateChange(.open)
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(mockPower.activeCount, 2, "Display assertion must be re-acquired when lid opens.")
+    }
 }

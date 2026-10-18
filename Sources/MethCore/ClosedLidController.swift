@@ -20,17 +20,30 @@ public actor ClosedLidController {
         case deactivating
     }
 
+    /// Added to the session's remaining time when arming the standalone watchdog so normal
+    /// session expiration in `SessionManager` always finishes and stops the watchdog before
+    /// the watchdog's own fallback timer fires.
+    public static let watchdogTimeoutGracePeriodSeconds = 60
+
     private let privilegedService: any ClosedLidPrivilegedManaging
     private let lidMonitor: any LidStateMonitoring
     private let powerMonitor: any PowerSourceMonitoring
+    private let thermalMonitor: any ThermalStateMonitoring
     private let watchdogClient: WatchdogClient
 
     private var state: State = .inactive
+    private var lowBatteryThreshold: Int = PowerSourceState.lowBatteryThreshold
 
     /// Invoked when a low-battery safety cutoff stops an active session, with whether normal
     /// sleep behavior was actually restored. Fire-and-forget by design; the receiver is
     /// expected to hop back to its own isolation if needed.
-    private var onLowBatteryCutoff: (@Sendable (_ sleepRestored: Bool) -> Void)?
+    private var onLowBatteryCutoff: (@Sendable (_ threshold: Int, _ sleepRestored: Bool) -> Void)?
+
+    /// Invoked when critical thermal pressure stops an active Closed-Lid session.
+    private var onThermalCutoff: (@Sendable (_ sleepRestored: Bool) -> Void)?
+
+    /// Invoked when the physical lid state changes while Closed-Lid Mode is active.
+    private var onLidStateChange: (@Sendable (_ state: LidState) -> Void)?
 
     /// Invoked when Closed-Lid Mode can no longer guarantee protection while a session is
     /// still nominally active (for example, support was removed or reassertion failed
@@ -43,11 +56,13 @@ public actor ClosedLidController {
         privilegedService: any ClosedLidPrivilegedManaging = ClosedLidPrivilegedService.shared,
         lidMonitor: any LidStateMonitoring = LidStateMonitor(),
         powerMonitor: any PowerSourceMonitoring = PowerSourceMonitor(),
+        thermalMonitor: any ThermalStateMonitoring = ThermalStateMonitor(),
         watchdogClient: WatchdogClient = WatchdogClient()
     ) {
         self.privilegedService = privilegedService
         self.lidMonitor = lidMonitor
         self.powerMonitor = powerMonitor
+        self.thermalMonitor = thermalMonitor
         self.watchdogClient = watchdogClient
 
         lidMonitor.onLidStateChange = { [weak self] state in
@@ -58,12 +73,17 @@ public actor ClosedLidController {
             guard let self else { return }
             Task { await self.handlePowerSourceChange(state) }
         }
+        thermalMonitor.onThermalStateChange = { [weak self] severity in
+            guard let self else { return }
+            Task { await self.handleThermalStateChange(severity) }
+        }
     }
 
     deinit {
         watchdogClient.stop()
         lidMonitor.stopMonitoring()
         powerMonitor.stopMonitoring()
+        thermalMonitor.stopMonitoring()
     }
 
     public var currentState: State {
@@ -74,25 +94,64 @@ public actor ClosedLidController {
         state == .active
     }
 
+    public var currentLidState: LidState {
+        lidMonitor.currentState
+    }
+
     public func supportStatus() -> ClosedLidSupportStatus {
         privilegedService.supportStatus()
     }
 
-    public func setLowBatteryCutoffHandler(_ handler: @escaping @Sendable (_ sleepRestored: Bool) -> Void) {
+    public func setLowBatteryThreshold(_ threshold: Int) {
+        lowBatteryThreshold = max(5, min(50, threshold))
+        if state == .active {
+            let power = powerMonitor.currentState
+            if isBelowBatteryThreshold(power) {
+                logger.warning("Battery is at or below updated threshold (\(self.lowBatteryThreshold)%). Triggering safety cutoff.")
+                let usedThreshold = lowBatteryThreshold
+                let restored = deactivate()
+                onLowBatteryCutoff?(usedThreshold, restored)
+            }
+        }
+    }
+
+    public func setLowBatteryCutoffHandler(_ handler: @escaping @Sendable (_ threshold: Int, _ sleepRestored: Bool) -> Void) {
         onLowBatteryCutoff = handler
+    }
+
+    public func setThermalCutoffHandler(_ handler: @escaping @Sendable (_ sleepRestored: Bool) -> Void) {
+        onThermalCutoff = handler
+    }
+
+    public func setLidStateChangeHandler(_ handler: @escaping @Sendable (_ state: LidState) -> Void) {
+        onLidStateChange = handler
     }
 
     public func setIntegrityFailureHandler(_ handler: @escaping @Sendable (_ reason: String, _ sleepRestored: Bool) -> Void) {
         onIntegrityFailure = handler
     }
 
+    private func isBelowBatteryThreshold(_ power: PowerSourceState) -> Bool {
+        guard !power.hasExternalPower else { return false }
+        if let level = power.batteryLevel {
+            return level <= lowBatteryThreshold
+        }
+        return power.isLowBattery
+    }
+
+    private static func watchdogTimeout(for sessionTimeoutSeconds: Int?) -> Int? {
+        guard let seconds = sessionTimeoutSeconds, seconds > 0 else { return nil }
+        return seconds + watchdogTimeoutGracePeriodSeconds
+    }
+
     /// Activates Closed-Lid Mode. Throws (without mutating any state) if support is not
     /// installed or the privileged mutation fails, so callers never observe a session that
     /// claims Closed-Lid protection when the underlying mechanism did not actually engage.
     public func activate(timeoutSeconds: Int? = nil) throws {
+        let effectiveWatchdogTimeout = Self.watchdogTimeout(for: timeoutSeconds)
         switch state {
         case .active, .activating:
-            watchdogClient.start(timeoutSeconds: timeoutSeconds)
+            watchdogClient.start(timeoutSeconds: effectiveWatchdogTimeout)
             return
         case .deactivating:
             throw ClosedLidError.activeSessionInProgress
@@ -114,15 +173,22 @@ public actor ClosedLidController {
         // unprotected until the battery happened to change again -- exactly the situation
         // the cutoff exists to prevent.
         let power = powerMonitor.currentState
-        guard !power.isLowBattery else {
+        guard !isBelowBatteryThreshold(power) else {
             state = .inactive
             throw ClosedLidError.batteryTooLow(power.batteryLevel)
+        }
+
+        // Refuse to start Closed-Lid Mode while the Mac is already in a critical thermal state.
+        let thermal = thermalMonitor.currentState
+        guard !thermal.isOverheated else {
+            state = .inactive
+            throw ClosedLidError.thermalPressureCritical
         }
 
         // Arm the watchdog before mutating SleepDisabled: if Meth crashes in the narrow
         // window right after enabling sleep, the watchdog is already watching and can
         // still recover, instead of depending solely on the next app launch.
-        watchdogClient.start(timeoutSeconds: timeoutSeconds)
+        watchdogClient.start(timeoutSeconds: effectiveWatchdogTimeout)
 
         do {
             try privilegedService.enableSleepDisabled()
@@ -134,7 +200,16 @@ public actor ClosedLidController {
 
         lidMonitor.startMonitoring()
         powerMonitor.startMonitoring()
+        thermalMonitor.startMonitoring()
         state = .active
+
+        // If the lid is already closed when Closed-Lid Mode is enabled (for example via SSH,
+        // Shortcuts, or just before unplugging an external display), put the internal display
+        // to sleep right away rather than waiting for a future lid-close transition.
+        if lidMonitor.currentState == .closed {
+            privilegedService.putDisplayToSleep()
+        }
+
         logger.info("Closed-Lid Mode successfully activated.")
     }
 
@@ -143,7 +218,7 @@ public actor ClosedLidController {
     /// it, for example when it races with the session being stopped.
     public func updateWatchdogTimeout(_ timeoutSeconds: Int?) {
         guard state == .active else { return }
-        watchdogClient.start(timeoutSeconds: timeoutSeconds)
+        watchdogClient.start(timeoutSeconds: Self.watchdogTimeout(for: timeoutSeconds))
     }
 
     /// - Returns: `true` if normal sleep behavior is known to be restored (including when
@@ -157,6 +232,7 @@ public actor ClosedLidController {
 
         lidMonitor.stopMonitoring()
         powerMonitor.stopMonitoring()
+        thermalMonitor.stopMonitoring()
 
         let restored = revertSleepDisabled()
         state = .inactive
@@ -245,10 +321,22 @@ public actor ClosedLidController {
         guard state == .active else { return }
 
         logger.info("Handling lid state transition: \(newState.rawValue)")
+        onLidStateChange?(newState)
         if newState == .closed {
             // Put the internal display to sleep immediately: it has no reason to stay lit
             // once the lid is shut, and doing so avoids wasted power and backlight heat.
             privilegedService.putDisplayToSleep()
+        }
+    }
+
+    private func handleThermalStateChange(_ severity: ThermalSeverity) {
+        guard state == .active else { return }
+
+        logger.info("Handling thermal state transition: \(String(describing: severity))")
+        if severity.isOverheated {
+            logger.warning("Critical thermal pressure detected while in Closed-Lid Mode. Triggering thermal safety cutoff.")
+            let restored = deactivate()
+            onThermalCutoff?(restored)
         }
     }
 
@@ -257,10 +345,11 @@ public actor ClosedLidController {
 
         logger.info("Handling power source transition: AC=\(newState.hasExternalPower), Battery=\(String(describing: newState.batteryLevel))%, Low=\(newState.isLowBattery)")
 
-        if newState.isLowBattery {
-            logger.warning("Battery reached low threshold while in Closed-Lid Mode. Triggering safety cutoff.")
+        if isBelowBatteryThreshold(newState) {
+            let usedThreshold = lowBatteryThreshold
+            logger.warning("Battery reached low threshold (\(usedThreshold)%) while in Closed-Lid Mode. Triggering safety cutoff.")
             let restored = deactivate()
-            onLowBatteryCutoff?(restored)
+            onLowBatteryCutoff?(usedThreshold, restored)
             return
         }
 
