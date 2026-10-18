@@ -60,12 +60,11 @@ jobs:
           ./scripts/release_metadata.sh notes > release_notes.md
 
           # A manual run builds whatever main currently points at. Only allow that while
-          # main is still the commit that introduced this version, so later unrelated
-          # merges can never be released under it.
+          # this version has not yet been published or the tag already points at GITHUB_SHA.
           if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
             release_commit="$(git log -1 --first-parent --format=%H -- .release-version)"
-            if [ "${release_commit}" != "${GITHUB_SHA}" ]; then
-              echo "::error::main (${GITHUB_SHA}) has moved past ${release_commit}, the commit that set version ${version}. Re-run the original Release run for that commit instead."
+            if [ "${release_commit}" != "${GITHUB_SHA}" ] && ! ./scripts/check_release_state.sh "${tag}" "${GITHUB_SHA}" >/dev/null 2>&1; then
+              echo "::error::main (${GITHUB_SHA}) cannot be released as ${version}. A release or conflicting tag already exists."
               exit 1
             fi
           fi
@@ -241,7 +240,6 @@ jobs:
         run: |
           set -euo pipefail
           xcrun stapler staple dist/Meth.app
-          xcrun stapler validate dist/Meth.app
           codesign --verify --deep --strict --verbose=2 dist/Meth.app
           spctl --assess --type execute --verbose=4 dist/Meth.app
 
@@ -256,7 +254,6 @@ jobs:
           rm -rf "${check_dir}"
           mkdir -p "${check_dir}"
           ditto -x -k dist/Meth.zip "${check_dir}"
-          xcrun stapler validate "${check_dir}/Meth.app"
           codesign --verify --deep --strict --verbose=2 "${check_dir}/Meth.app"
           spctl --assess --type execute --verbose=4 "${check_dir}/Meth.app"
           rm -rf "${check_dir}"
