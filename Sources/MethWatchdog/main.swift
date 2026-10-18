@@ -103,7 +103,7 @@ final class Watchdog {
         // The watchdog can sit blocked in `kevent` for hours, so the value it cached when
         // it launched may be arbitrarily stale. Force a re-read from the preferences
         // daemon before deciding whether a newer generation has superseded this one.
-        sharedDefaults.synchronize()
+        ClosedLidSharedState.synchronize(sharedDefaults)
         if let generation, sharedDefaults.string(forKey: ClosedLidSharedState.activeWatchdogGenerationKey) != generation {
             logger.notice("Superseded by a newer Closed-Lid generation; skipping restoration.")
             return 0

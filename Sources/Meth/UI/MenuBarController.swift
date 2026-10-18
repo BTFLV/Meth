@@ -6,11 +6,13 @@ import MethCore
 public final class MenuBarController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
     private let sessionManager: SessionManager
+    private let statusMenu: NSMenu
     private var cancellables = Set<AnyCancellable>()
 
     public init(sessionManager: SessionManager? = nil) {
         self.sessionManager = sessionManager ?? SessionManager.shared
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        self.statusMenu = NSMenu()
         super.init()
 
         setupStatusItem()
@@ -21,19 +23,51 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     private func setupStatusItem() {
         guard let button = statusItem.button else { return }
         button.target = self
+        button.action = #selector(handleStatusItemClick(_:))
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         updateIcon()
 
-        let menu = NSMenu()
-        menu.delegate = self
-        statusItem.menu = menu
+        statusMenu.delegate = self
+    }
+
+    @objc private func handleStatusItemClick(_ sender: NSStatusBarButton) {
+        let event = NSApp.currentEvent
+        let isRightClick = event?.type == .rightMouseUp
+        let isOptionClick = event?.modifierFlags.contains(.option) ?? false
+
+        if isRightClick || isOptionClick {
+            if sessionManager.isSessionActive {
+                stopSession()
+            } else {
+                startSessionWithCurrentOptions(duration: .indefinite)
+            }
+            return
+        }
+
+        statusItem.menu = statusMenu
+        buttonPerformClick(sender)
+    }
+
+    private func buttonPerformClick(_ button: NSStatusBarButton) {
+        button.performClick(nil)
+        statusItem.menu = nil
     }
 
     private func observeSession() {
         sessionManager.$activeSession
             .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.updateIcon()
-                self?.rebuildMenu()
+            .sink { [weak self] session in
+                guard let self else { return }
+                self.updateIcon()
+                self.rebuildMenu()
+                if let session {
+                    NotificationService.shared.requestAuthorizationIfNeeded()
+                    NotificationService.shared.scheduleExpirationWarning(
+                        remainingSeconds: self.sessionManager.remainingTime ?? session.remainingTime()
+                    )
+                } else {
+                    NotificationService.shared.cancelExpirationWarning()
+                }
             }
             .store(in: &cancellables)
 
@@ -56,6 +90,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
+                self?.updateIcon()
                 self?.rebuildMenu()
             }
             .store(in: &cancellables)
@@ -64,7 +99,12 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     private func updateIcon() {
         let isActive = sessionManager.isSessionActive
         let isClosedLid = sessionManager.activeSession?.closedLidMode ?? false
-        statusItem.button?.image = MenuBarIcon.image(isActive: isActive, isClosedLid: isClosedLid)
+        let hasWarning = sessionManager.isSleepDisabledOutsideSession && !isClosedLid
+        statusItem.button?.image = MenuBarIcon.image(
+            isActive: isActive,
+            isClosedLid: isClosedLid,
+            hasSleepDisabledWarning: hasWarning
+        )
     }
 
     public func menuWillOpen(_ menu: NSMenu) {
@@ -75,32 +115,31 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func rebuildMenu() {
-        guard let menu = statusItem.menu else { return }
-        menu.removeAllItems()
+        statusMenu.removeAllItems()
 
         let closedLidSessionActive = sessionManager.activeSession?.closedLidMode ?? false
         if sessionManager.isSleepDisabledOutsideSession && !closedLidSessionActive {
-            addSleepDisabledWarning(to: menu)
+            addSleepDisabledWarning(to: statusMenu)
         }
 
         if let session = sessionManager.activeSession {
-            buildActiveMenu(menu, session: session)
+            buildActiveMenu(statusMenu, session: session)
         } else {
-            buildInactiveMenu(menu)
+            buildInactiveMenu(statusMenu)
         }
 
-        menu.addItem(NSMenuItem.separator())
+        statusMenu.addItem(NSMenuItem.separator())
         let aboutItem = NSMenuItem(title: "About Meth", action: #selector(showAbout), keyEquivalent: "")
         aboutItem.target = self
-        menu.addItem(aboutItem)
+        statusMenu.addItem(aboutItem)
 
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
-        menu.addItem(settingsItem)
+        statusMenu.addItem(settingsItem)
 
         let quitItem = NSMenuItem(title: "Quit Meth", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
-        menu.addItem(quitItem)
+        statusMenu.addItem(quitItem)
     }
 
     private func buildActiveMenu(_ menu: NSMenu, session: Session) {
@@ -125,11 +164,6 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
             addInfoItem(to: menu, title: "No time limit — started \(SessionDuration.describeTime(session.startDate))")
         }
 
-        if session.closedLidMode {
-            addInfoItem(to: menu, title: "Closed-Lid Mode: Enabled")
-        }
-        addInfoItem(to: menu, title: session.allowDisplaySleep ? "Display Sleep: Allowed" : "Display Sleep: Prevented")
-
         menu.addItem(NSMenuItem.separator())
 
         let stopItem = NSMenuItem(title: "Stop Session", action: #selector(stopSession), keyEquivalent: "s")
@@ -150,6 +184,13 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
             extendItem.submenu = extendMenu
             menu.addItem(extendItem)
         }
+
+        menu.addItem(NSMenuItem.separator())
+        addOptionsSection(
+            to: menu,
+            allowDisplaySleep: session.allowDisplaySleep,
+            closedLidMode: session.closedLidMode
+        )
     }
 
     private func buildInactiveMenu(_ menu: NSMenu) {
@@ -179,7 +220,14 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(startItem)
 
         menu.addItem(NSMenuItem.separator())
+        addOptionsSection(
+            to: menu,
+            allowDisplaySleep: sessionManager.defaultAllowDisplaySleep,
+            closedLidMode: sessionManager.defaultClosedLidMode
+        )
+    }
 
+    private func addOptionsSection(to menu: NSMenu, allowDisplaySleep: Bool, closedLidMode: Bool) {
         let optionsHeader = NSMenuItem(title: "Options", action: nil, keyEquivalent: "")
         optionsHeader.isEnabled = false
         menu.addItem(optionsHeader)
@@ -190,7 +238,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
             keyEquivalent: ""
         )
         displaySleepItem.target = self
-        displaySleepItem.state = sessionManager.defaultAllowDisplaySleep ? .on : .off
+        displaySleepItem.state = allowDisplaySleep ? .on : .off
         menu.addItem(displaySleepItem)
 
         let closedLidItem = NSMenuItem(
@@ -199,7 +247,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
             keyEquivalent: ""
         )
         closedLidItem.target = self
-        closedLidItem.state = sessionManager.defaultClosedLidMode ? .on : .off
+        closedLidItem.state = closedLidMode ? .on : .off
         menu.addItem(closedLidItem)
     }
 
@@ -233,7 +281,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func updateRemainingTimeItem() {
-        guard let item = statusItem.menu?.item(withTag: 1001),
+        guard let item = statusMenu.item(withTag: 1001),
               let remaining = sessionManager.remainingTime else { return }
         item.title = "Remaining: \(SessionDuration.formatRemaining(seconds: remaining))"
     }
@@ -289,7 +337,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         switch error {
         case let closedLidError as ClosedLidError:
             switch closedLidError {
-            case .batteryTooLow:
+            case .batteryTooLow, .thermalPressureCritical:
                 // Self-explanatory and actionable on its own; the generic "reinstall
                 // support" advice below would be actively misleading here.
                 return closedLidError.localizedDescription
@@ -314,6 +362,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func presentAutomaticStopAlert(reason: String) {
         sessionManager.clearLastAutomaticStopReason()
+        NotificationService.shared.postAutomaticStopNotification(reason: reason)
         let alert = NSAlert()
         alert.messageText = "Session Stopped Automatically"
         alert.informativeText = reason
@@ -353,35 +402,67 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func extend15Min() {
         Task { @MainActor in
             await sessionManager.extendSession(by: SessionDuration.fifteenMinutes)
+            NotificationService.shared.scheduleExpirationWarning(remainingSeconds: sessionManager.remainingTime)
         }
     }
 
     @objc private func extend60Min() {
         Task { @MainActor in
             await sessionManager.extendSession(by: SessionDuration.oneHour)
+            NotificationService.shared.scheduleExpirationWarning(remainingSeconds: sessionManager.remainingTime)
         }
     }
 
     @objc private func toggleDisplaySleep() {
-        sessionManager.defaultAllowDisplaySleep.toggle()
-        rebuildMenu()
+        if let active = sessionManager.activeSession {
+            let newState = !active.allowDisplaySleep
+            Task { @MainActor in
+                await sessionManager.setAllowDisplaySleep(newState)
+                rebuildMenu()
+            }
+        } else {
+            sessionManager.defaultAllowDisplaySleep.toggle()
+            rebuildMenu()
+        }
     }
 
     @objc private func toggleClosedLid() {
-        let newState = !sessionManager.defaultClosedLidMode
+        let current = sessionManager.activeSession?.closedLidMode ?? sessionManager.defaultClosedLidMode
+        let newState = !current
+
+        let applyChange: @MainActor () -> Void = { [weak self] in
+            guard let self else { return }
+            if self.sessionManager.isSessionActive {
+                Task { @MainActor in
+                    do {
+                        try await self.sessionManager.setClosedLidMode(newState)
+                        self.rebuildMenu()
+                    } catch ClosedLidError.supportNotInstalled {
+                        self.showSupportRequiredAlert()
+                    } catch {
+                        let alert = NSAlert()
+                        alert.messageText = "Couldn't Update Closed-Lid Mode"
+                        alert.informativeText = error.localizedDescription
+                        self.runAlert(alert)
+                    }
+                }
+            } else {
+                self.sessionManager.defaultClosedLidMode = newState
+                self.rebuildMenu()
+            }
+        }
+
         if newState && !sessionManager.hasAcknowledgedThermalWarning {
             ThermalWarningWindowController.show(
                 onConfirm: { [weak self] in
-                    guard let self = self else { return }
+                    guard let self else { return }
                     self.sessionManager.hasAcknowledgedThermalWarning = true
-                    self.sessionManager.defaultClosedLidMode = true
-                    self.rebuildMenu()
+                    applyChange()
                 },
                 onCancel: {}
             )
         } else {
-            sessionManager.defaultClosedLidMode = newState
-            rebuildMenu()
+            applyChange()
         }
     }
 

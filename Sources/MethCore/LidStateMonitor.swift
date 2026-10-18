@@ -42,6 +42,9 @@ public final class LidStateMonitor: LidStateMonitoring, @unchecked Sendable {
 
         guard let port = IONotificationPortCreate(kIOMainPortDefault) else {
             logger.error("Failed to create IONotificationPort")
+            lock.lock()
+            isMonitoring = false
+            lock.unlock()
             return
         }
         self.notifyPort = port
@@ -54,6 +57,7 @@ public final class LidStateMonitor: LidStateMonitoring, @unchecked Sendable {
         let rootDomain = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
         guard rootDomain != 0 else {
             logger.error("Failed to find IOPMrootDomain service")
+            stopMonitoring()
             return
         }
         self.rootDomainService = rootDomain
@@ -75,6 +79,7 @@ public final class LidStateMonitor: LidStateMonitoring, @unchecked Sendable {
 
         if kr != kIOReturnSuccess {
             logger.error("IOServiceAddInterestNotification failed: \(kr)")
+            stopMonitoring()
         } else {
             logger.info("Successfully registered for lid state notifications")
         }

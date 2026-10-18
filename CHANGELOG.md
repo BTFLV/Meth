@@ -7,6 +7,54 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-19
+
+### Added
+
+- **Thermal safety cutoff** for Closed-Lid Mode: Meth monitors `ProcessInfo.thermalState`
+  and refuses to start, or stops an active Closed-Lid session and restores normal system
+  sleep, when macOS reports critical thermal pressure.
+- **Shortcuts, CLI, and URL scheme integration**:
+  - Built-in App Intents (`Start Meth Session`, `Stop Meth Session`,
+    `Extend Meth Session`, and `Get Meth Status`) for macOS Shortcuts and Spotlight.
+  - Command-line subcommands on the app executable (`start`, `stop`, `toggle`, `extend`,
+    `status`, `help`) that control a running Meth instance or return JSON status.
+  - `meth://` URL scheme (`start`, `stop`, `toggle`, `extend`) for scripting and
+    third-party launchers.
+- **System notifications**: optional macOS notifications warn 5 minutes before a timed
+  session expires—with quick actions to extend by 15 minutes or 1 hour, or stop—and alert
+  when Closed-Lid Mode stops automatically due to low battery, critical thermal pressure,
+  or removed support.
+- **Configurable low-battery cutoff**: the Closed-Lid Mode battery threshold can be
+  adjusted between 5% and 50% in Settings (default 10%).
+- **Live session option toggling**: *Allow Display Sleep* and *Closed-Lid Mode* can be
+  toggled while a session is already running without restarting the timer.
+- **Quick toggle from the menu bar**: Option-clicking or right-clicking the menu bar icon
+  starts or stops a session with the last-used settings.
+- **Menu bar warning indicator**: the menu bar icon displays a warning badge when normal
+  system sleep could not be restored automatically.
+
+### Changed
+
+- When the lid closes during a Closed-Lid session, Meth releases its display sleep
+  assertion so macOS keeps the internal panel off, and re-acquires the assertion when the
+  lid opens again (unless *Allow Display Sleep* is enabled).
+
+### Fixed
+
+- Starting Closed-Lid Mode while the MacBook lid is already closed now puts the display to
+  sleep immediately instead of waiting for the next lid-close transition.
+- The crash-recovery watchdog timeout now includes a 60-second grace buffer beyond timed
+  sessions so normal session expiration cannot race with the watchdog.
+- Extending a timed preset session now preserves the monotonically ticked remaining time
+  instead of recalculating from the original start timestamp.
+- Reading `pmset` output now drains standard output and standard error concurrently before
+  waiting for process exit, avoiding potential pipe buffer deadlocks.
+- Shared Closed-Lid recovery preferences are explicitly synchronized across the app and
+  watchdog processes via `CFPreferencesAppSynchronize`.
+- `LidStateMonitor` now cleans up its IOKit notification port and resets its monitoring
+  state if setup fails partway through.
+
 ## [1.1.0] - 2026-09-24
 
 ### Added
@@ -98,6 +146,7 @@ First stable release.
   `sudoers.d` rule; installing or removing that rule runs a fixed script as root after an
   administrator password prompt.
 
-[Unreleased]: https://github.com/BTFLV/Meth/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/BTFLV/Meth/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/BTFLV/Meth/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/BTFLV/Meth/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/BTFLV/Meth/releases/tag/v1.0.0

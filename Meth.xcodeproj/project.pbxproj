@@ -42,6 +42,10 @@
 		E6C44BADA3F6608B63D842FF /* SessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F73B409CD68C78132AB7849 /* SessionManager.swift */; };
 		E6E268B86D32AFC79BF98EC1 /* PowerAssertion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F45DECEC1EDFA1C631B4F5 /* PowerAssertion.swift */; };
 		EC47E565D87D7B2FA546A93A /* MenuBarIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1C969499491A8CE5F2D4D2C /* MenuBarIcon.swift */; };
+		F1A2B3C4D5E6F708192A3B4C /* ThermalStateMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5C /* ThermalStateMonitor.swift */; };
+		F2B3C4D5E6F708192A3B4C5D /* ThermalStateMonitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F60718293A4B5C6D /* ThermalStateMonitoring.swift */; };
+		F3C4D5E6F708192A3B4C5D6E /* MethAutomation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D4E5F60718293A4B5C6D7E /* MethAutomation.swift */; };
+		F4D5E6F708192A3B4C5D6E7F /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F60718293A4B5C6D7E8F /* NotificationService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -105,6 +109,10 @@
 		E1BA9A3D650514BC0BB73EAA /* ClosedLidPrivilegedServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClosedLidPrivilegedServiceTests.swift; sourceTree = "<group>"; };
 		EE7782DF7DFC7AEF7676FA65 /* SessionManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManagerTests.swift; sourceTree = "<group>"; };
 		FC38B24B46269C5D46DA47E0 /* libMethCore.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libMethCore.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1B2C3D4E5F60718293A4B5C /* ThermalStateMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermalStateMonitor.swift; sourceTree = "<group>"; };
+		B2C3D4E5F60718293A4B5C6D /* ThermalStateMonitoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermalStateMonitoring.swift; sourceTree = "<group>"; };
+		C3D4E5F60718293A4B5C6D7E /* MethAutomation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MethAutomation.swift; sourceTree = "<group>"; };
+		D4E5F60718293A4B5C6D7E8F /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -140,6 +148,8 @@
 			children = (
 				399CD2266FFFC59111711E23 /* AppDelegate.swift */,
 				02F66685B847D64FE27006CF /* MethApp.swift */,
+				C3D4E5F60718293A4B5C6D7E /* MethAutomation.swift */,
+				D4E5F60718293A4B5C6D7E8F /* NotificationService.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -239,6 +249,8 @@
 				42D3226DB1A30E1F1E0D7A04 /* Session.swift */,
 				3CAAB279320D53E6AA442D02 /* SessionDuration.swift */,
 				3F73B409CD68C78132AB7849 /* SessionManager.swift */,
+				A1B2C3D4E5F60718293A4B5C /* ThermalStateMonitor.swift */,
+				B2C3D4E5F60718293A4B5C6D /* ThermalStateMonitoring.swift */,
 				82FD92B6077FB4C064725C3A /* WatchdogClient.swift */,
 			);
 			name = MethCore;
@@ -405,6 +417,8 @@
 				2B73BF0A500D69263A8EBAC8 /* MenuBarController.swift in Sources */,
 				EC47E565D87D7B2FA546A93A /* MenuBarIcon.swift in Sources */,
 				5788C138C086383D11FDB06F /* MethApp.swift in Sources */,
+				F3C4D5E6F708192A3B4C5D6E /* MethAutomation.swift in Sources */,
+				F4D5E6F708192A3B4C5D6E7F /* NotificationService.swift in Sources */,
 				51DDF770CF31C341017DDCFF /* SettingsView.swift in Sources */,
 				5DF783DFD8A88385E3C5B99F /* SettingsWindowController.swift in Sources */,
 				BD1BF41B1C0ACEEDC2BF577C /* ThermalWarningSheet.swift in Sources */,
@@ -428,6 +442,8 @@
 				59088E8E371AD9DED0A34C0B /* Session.swift in Sources */,
 				80BBB4D018CD1A314E48AB46 /* SessionDuration.swift in Sources */,
 				E6C44BADA3F6608B63D842FF /* SessionManager.swift in Sources */,
+				F1A2B3C4D5E6F708192A3B4C /* ThermalStateMonitor.swift in Sources */,
+				F2B3C4D5E6F708192A3B4C5D /* ThermalStateMonitoring.swift in Sources */,
 				112D26D97EFB204FB656D7BE /* WatchdogClient.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

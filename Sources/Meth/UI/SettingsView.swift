@@ -65,6 +65,26 @@ public struct SettingsView: View {
                             )
                         }
                     }
+
+                Toggle("Session notifications", isOn: $sessionManager.notificationsEnabled)
+                    .onChange(of: sessionManager.notificationsEnabled) { enabled in
+                        if enabled {
+                            NotificationService.shared.requestAuthorizationIfNeeded()
+                            NotificationService.shared.scheduleExpirationWarning(
+                                remainingSeconds: sessionManager.remainingTime
+                            )
+                        } else {
+                            NotificationService.shared.cancelExpirationWarning()
+                        }
+                    }
+
+                Picker("Low-battery cutoff (Closed-Lid)", selection: $sessionManager.lowBatteryThreshold) {
+                    Text("10%").tag(10)
+                    Text("15%").tag(15)
+                    Text("20%").tag(20)
+                    Text("25%").tag(25)
+                    Text("30%").tag(30)
+                }
             }
 
             Section("Closed-Lid Support") {
@@ -109,7 +129,7 @@ public struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 480, height: 400)
+        .frame(width: 480, height: 460)
         .onAppear {
             refreshStatus()
         }

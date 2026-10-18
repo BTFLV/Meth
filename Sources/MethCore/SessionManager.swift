@@ -23,9 +23,9 @@ public final class SessionManager: ObservableObject {
 
     @Published public private(set) var activeSession: Session?
     @Published public private(set) var remainingTime: TimeInterval?
-    /// Set when a session was stopped or downgraded automatically (low battery, integrity
-    /// failure), or when stopping could not restore normal sleep. Cleared by the UI after
-    /// being surfaced once.
+    /// Set when a session was stopped or downgraded automatically (low battery, thermal
+    /// pressure, integrity failure), or when stopping could not restore normal sleep.
+    /// Cleared by the UI after being surfaced once.
     @Published public private(set) var lastAutomaticStopReason: String?
     /// `true` while system sleep is disabled although no Closed-Lid session is active in
     /// Meth: a revert that failed, a leftover Meth could not recover, or another tool's
@@ -39,6 +39,25 @@ public final class SessionManager: ObservableObject {
     @Published public var defaultClosedLidMode: Bool {
         didSet {
             UserDefaults.standard.set(defaultClosedLidMode, forKey: "defaultClosedLidMode")
+        }
+    }
+    @Published public var lowBatteryThreshold: Int {
+        didSet {
+            let clamped = max(5, min(50, lowBatteryThreshold))
+            if lowBatteryThreshold != clamped {
+                lowBatteryThreshold = clamped
+                return
+            }
+            UserDefaults.standard.set(lowBatteryThreshold, forKey: "lowBatteryThreshold")
+            let controller = closedLidController
+            Task {
+                await controller.setLowBatteryThreshold(lowBatteryThreshold)
+            }
+        }
+    }
+    @Published public var notificationsEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(notificationsEnabled, forKey: "notificationsEnabled")
         }
     }
     @Published public var hasAcknowledgedThermalWarning: Bool {
@@ -79,10 +98,11 @@ public final class SessionManager: ObservableObject {
     /// adjustment cannot cause premature or delayed expiration.
     private var monotonicDeadline: ContinuousClock.Instant?
 
-    /// Session operations (start, stop, extend, restore) run strictly one after another.
-    /// Each can suspend while Closed-Lid Mode is switched, and interleaving them could, for
-    /// example, extend a session that is being stopped (re-enabling Closed-Lid Mode with no
-    /// session left to turn it off) or let one start replace another without stopping it.
+    /// Session operations (start, stop, extend, restore, option changes) run strictly one
+    /// after another. Each can suspend while Closed-Lid Mode is switched, and interleaving
+    /// them could, for example, extend a session that is being stopped (re-enabling
+    /// Closed-Lid Mode with no session left to turn it off) or let one start replace another
+    /// without stopping it.
     private var lastOperation: Task<Void, Never>?
     private var sleepStateRefreshGeneration = 0
 
@@ -101,6 +121,19 @@ public final class SessionManager: ObservableObject {
             self.defaultAllowDisplaySleep = true
         } else {
             self.defaultAllowDisplaySleep = defaults.bool(forKey: "defaultAllowDisplaySleep")
+        }
+
+        if defaults.object(forKey: "lowBatteryThreshold") == nil {
+            self.lowBatteryThreshold = PowerSourceState.lowBatteryThreshold
+        } else {
+            let stored = defaults.integer(forKey: "lowBatteryThreshold")
+            self.lowBatteryThreshold = max(5, min(50, stored))
+        }
+
+        if defaults.object(forKey: "notificationsEnabled") == nil {
+            self.notificationsEnabled = true
+        } else {
+            self.notificationsEnabled = defaults.bool(forKey: "notificationsEnabled")
         }
 
         self.defaultClosedLidMode = defaults.bool(forKey: "defaultClosedLidMode")
@@ -142,6 +175,24 @@ public final class SessionManager: ObservableObject {
 
     public func extendSession(by seconds: TimeInterval) async {
         try? await enqueue { await self.performExtend(by: seconds) }
+    }
+
+    /// Updates whether the display may sleep during an active session (and saves the choice
+    /// as the default for future sessions).
+    public func setAllowDisplaySleep(_ allow: Bool) async {
+        defaultAllowDisplaySleep = allow
+        try? await enqueue {
+            await self.performSetAllowDisplaySleep(allow)
+        }
+    }
+
+    /// Enables or disables Closed-Lid Mode during an active session (and saves the choice
+    /// as the default for future sessions).
+    public func setClosedLidMode(_ enabled: Bool) async throws {
+        try await enqueue {
+            try await self.performSetClosedLidMode(enabled)
+        }
+        defaultClosedLidMode = enabled
     }
 
     /// Turns system sleep back on when it is disabled outside a Closed-Lid session (see
@@ -221,21 +272,7 @@ public final class SessionManager: ObservableObject {
             throw error
         }
 
-        // 2. Acquire display sleep assertion if display sleep is NOT allowed
-        var acquiredDisplay: AssertionToken?
-        if !displaySleep {
-            do {
-                let id = try powerAssertionManager.createAssertion(
-                    type: .preventUserIdleDisplaySleep,
-                    name: "Meth Display Keep Awake"
-                )
-                acquiredDisplay = AssertionToken(id: id, type: .preventUserIdleDisplaySleep, manager: powerAssertionManager)
-            } catch {
-                logger.warning("Failed to acquire display sleep assertion: \(error.localizedDescription)")
-            }
-        }
-
-        // 3. Activate Closed-Lid Mode if requested. If this fails, the whole session fails
+        // 2. Activate Closed-Lid Mode if requested. If this fails, the whole session fails
         // rather than silently continuing in a downgraded, normal keep-awake-only mode: a
         // user who explicitly asked for Closed-Lid Mode should never be left thinking their
         // Mac will stay awake with the lid closed when it will not.
@@ -245,10 +282,18 @@ public final class SessionManager: ObservableObject {
                 try await closedLidController.activate(timeoutSeconds: timeoutSeconds)
             } catch {
                 logger.error("Failed to activate Closed-Lid Mode: \(error.localizedDescription)")
-                acquiredDisplay?.release()
                 acquiredSystem.release()
                 throw error
             }
+        }
+
+        // 3. Acquire display sleep assertion if display sleep is NOT allowed and the lid is
+        // not currently closed. Holding `preventUserIdleDisplaySleep` while the lid is shut
+        // would keep the internal display awake against `pmset displaysleepnow`.
+        var acquiredDisplay: AssertionToken?
+        let lidIsClosed = closedLid ? (await closedLidController.currentLidState == .closed) : false
+        if !displaySleep && !lidIsClosed {
+            acquiredDisplay = acquireDisplayAssertion()
         }
 
         self.systemSleepAssertion = acquiredSystem
@@ -258,6 +303,58 @@ public final class SessionManager: ObservableObject {
         logger.info("Session started: duration=\(String(describing: duration)), displaySleep=\(displaySleep), closedLid=\(closedLid)")
 
         if closedLid {
+            await refreshSleepState()
+        }
+    }
+
+    private func acquireDisplayAssertion() -> AssertionToken? {
+        do {
+            let id = try powerAssertionManager.createAssertion(
+                type: .preventUserIdleDisplaySleep,
+                name: "Meth Display Keep Awake"
+            )
+            return AssertionToken(id: id, type: .preventUserIdleDisplaySleep, manager: powerAssertionManager)
+        } catch {
+            logger.warning("Failed to acquire display sleep assertion: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private func performSetAllowDisplaySleep(_ allow: Bool) async {
+        guard let current = activeSession, current.allowDisplaySleep != allow else { return }
+        if allow {
+            displaySleepAssertion?.release()
+            displaySleepAssertion = nil
+        } else {
+            let lidIsClosed = current.closedLidMode ? (await closedLidController.currentLidState == .closed) : false
+            if !lidIsClosed && displaySleepAssertion == nil {
+                displaySleepAssertion = acquireDisplayAssertion()
+            }
+        }
+        activeSession = current.withOptions(allowDisplaySleep: allow)
+    }
+
+    private func performSetClosedLidMode(_ enabled: Bool) async throws {
+        guard let current = activeSession else { return }
+        guard current.closedLidMode != enabled else { return }
+
+        if enabled {
+            let timeoutSeconds = remainingTime.map { Int(ceil($0)) } ?? current.remainingTime().map { Int(ceil($0)) }
+            try await closedLidController.activate(timeoutSeconds: timeoutSeconds)
+            if await closedLidController.currentLidState == .closed {
+                displaySleepAssertion?.release()
+                displaySleepAssertion = nil
+            }
+            activeSession = current.withOptions(closedLidMode: true)
+            await refreshSleepState()
+        } else {
+            activeSession = current.withOptions(closedLidMode: false)
+            if !current.allowDisplaySleep && displaySleepAssertion == nil {
+                displaySleepAssertion = acquireDisplayAssertion()
+            }
+            if await !closedLidController.deactivate() {
+                lastAutomaticStopReason = "Closed-Lid Mode was turned off. \(Self.sleepNotRestoredAdvice)"
+            }
             await refreshSleepState()
         }
     }
@@ -289,11 +386,14 @@ public final class SessionManager: ObservableObject {
         guard let current = activeSession, !current.duration.isIndefinite else { return }
 
         var deadlineOverride: ContinuousClock.Instant?
+        var remainingOverride: TimeInterval?
         if case .preset = current.duration, let deadline = monotonicDeadline {
-            deadlineOverride = deadline.advanced(by: .seconds(seconds))
+            let now = Self.clock.now
+            remainingOverride = now < deadline ? now.duration(to: deadline).timeInterval : 0
+            deadlineOverride = (now < deadline ? deadline : now).advanced(by: .seconds(seconds))
         }
 
-        let extended = current.extending(by: seconds)
+        let extended = current.extending(by: seconds, remainingOverride: remainingOverride)
         self.activeSession = extended
         scheduleExpiration(for: extended, presetDeadlineOverride: deadlineOverride)
 
@@ -404,13 +504,28 @@ public final class SessionManager: ObservableObject {
 
     private func setupClosedLidCallbacks() {
         let controller = closedLidController
+        let initialThreshold = lowBatteryThreshold
         Task {
-            await controller.setLowBatteryCutoffHandler { [weak self] sleepRestored in
+            await controller.setLowBatteryThreshold(initialThreshold)
+            await controller.setLowBatteryCutoffHandler { [weak self] threshold, sleepRestored in
                 Task { @MainActor [weak self] in
                     await self?.handleClosedLidCutoff(
-                        reason: "Your Closed-Lid session was stopped because the battery reached \(PowerSourceState.lowBatteryThreshold)% while the Mac was not connected to power.",
+                        reason: "Your Closed-Lid session was stopped because the battery reached \(threshold)% while the Mac was not connected to power.",
                         sleepRestored: sleepRestored
                     )
+                }
+            }
+            await controller.setThermalCutoffHandler { [weak self] sleepRestored in
+                Task { @MainActor [weak self] in
+                    await self?.handleClosedLidCutoff(
+                        reason: "Your Closed-Lid session was stopped because the Mac reached critical thermal pressure.",
+                        sleepRestored: sleepRestored
+                    )
+                }
+            }
+            await controller.setLidStateChangeHandler { [weak self] lidState in
+                Task { @MainActor [weak self] in
+                    self?.handleLidStateDisplayAssertionTransition(lidState)
                 }
             }
             await controller.setIntegrityFailureHandler { [weak self] reason, sleepRestored in
@@ -421,8 +536,25 @@ public final class SessionManager: ObservableObject {
         }
     }
 
-    /// The controller has already turned Closed-Lid Mode off by itself (low battery, or
-    /// support disappeared); end the session that relied on it and tell the user.
+    private func handleLidStateDisplayAssertionTransition(_ lidState: LidState) {
+        guard let current = activeSession, current.closedLidMode, !current.allowDisplaySleep else { return }
+        switch lidState {
+        case .closed:
+            // Release the display sleep assertion while the lid is closed so it does not
+            // keep the internal panel awake after `pmset displaysleepnow`.
+            displaySleepAssertion?.release()
+            displaySleepAssertion = nil
+        case .open:
+            if displaySleepAssertion == nil {
+                displaySleepAssertion = acquireDisplayAssertion()
+            }
+        case .unknown:
+            break
+        }
+    }
+
+    /// The controller has already turned Closed-Lid Mode off by itself (low battery, thermal
+    /// cutoff, or support disappeared); end the session that relied on it and tell the user.
     private func handleClosedLidCutoff(reason: String, sleepRestored: Bool) async {
         logger.warning("Closed-Lid Mode stopped automatically: \(reason)")
         try? await enqueue {

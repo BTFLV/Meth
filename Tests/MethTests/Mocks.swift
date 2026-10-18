@@ -110,6 +110,39 @@ final class MockPowerSourceMonitor: PowerSourceMonitoring, @unchecked Sendable {
     }
 }
 
+final class MockThermalStateMonitor: ThermalStateMonitoring, @unchecked Sendable {
+    private let lock = NSLock()
+    var simulatedState: ThermalSeverity = .nominal
+    var isMonitoring = false
+    var onThermalStateChange: (@Sendable (ThermalSeverity) -> Void)?
+
+    var currentState: ThermalSeverity {
+        lock.lock()
+        defer { lock.unlock() }
+        return simulatedState
+    }
+
+    func startMonitoring() {
+        lock.lock()
+        isMonitoring = true
+        lock.unlock()
+    }
+
+    func stopMonitoring() {
+        lock.lock()
+        isMonitoring = false
+        lock.unlock()
+    }
+
+    func triggerThermalChange(_ newState: ThermalSeverity) {
+        lock.lock()
+        simulatedState = newState
+        let callback = onThermalStateChange
+        lock.unlock()
+        callback?(newState)
+    }
+}
+
 final class MockClosedLidPrivilegedService: ClosedLidPrivilegedManaging, @unchecked Sendable {
     private let lock = NSLock()
     var status: ClosedLidSupportStatus = .installed
