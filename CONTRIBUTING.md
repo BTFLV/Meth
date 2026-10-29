@@ -27,7 +27,7 @@ user-visible change.
 
 ```bash
 swift build                     # quick host-architecture build
-./scripts/build_app.sh          # Universal 2 dist/Meth.app + dist/Meth.zip, ad-hoc signed
+./scripts/build_app.sh          # Apple Silicon (arm64) dist/Meth.app + dist/Meth.zip, ad-hoc signed
 ```
 
 `Meth.xcodeproj` is generated from `project.yml` with

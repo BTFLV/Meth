@@ -206,7 +206,7 @@ swift test
 xcodebuild build -project Meth.xcodeproj -scheme Meth -configuration Release
 xcodebuild test -project Meth.xcodeproj -scheme MethTests -destination "platform=macOS"
 
-# Package a Universal 2 (arm64 + x86_64) dist/Meth.app and dist/Meth.zip, ad-hoc signed
+# Package an Apple Silicon (arm64) dist/Meth.app and dist/Meth.zip, ad-hoc signed
 ./scripts/build_app.sh
 ```
 
@@ -222,10 +222,8 @@ edit `project.yml` and run `xcodegen generate` rather than editing the project d
 ## System requirements
 
 - macOS 13.0 (Ventura) or later.
-- **Universal 2**: each release zip contains a single `Meth.app` with both Apple
-  Silicon (arm64) and Intel (x86_64) binaries; the correct slice is used automatically.
-  Intel compatibility is built and packaged but is not actively tested on real Intel
-  hardware, since none is available in this project's build environment.
+- **Apple Silicon (arm64)**: release builds contain arm64 binaries only; Intel Macs are
+  not supported.
 - Administrator authentication (once) only if Closed-Lid Mode is used; ordinary keep-awake
   sessions require no elevated privileges at all.
 

@@ -73,7 +73,7 @@ notes() {
 
   cat <<EOF
 - **Requires** macOS ${min_macos} or later
-- **Universal** binary for Apple Silicon and Intel Macs
+- **Apple Silicon** (arm64) only; Intel Macs are not supported
 - **Signed** with an Apple Developer ID Application certificate and **notarized** by Apple
 
 **Install:** download \`Meth-${version}.zip\`, unzip it, and move \`Meth.app\` to your
