@@ -22,18 +22,10 @@ fi
 echo "==> Meth ${VERSION} (build ${BUILD_NUMBER})"
 
 ARM64_DIR=".build/arm64-apple-macosx/release"
-X86_64_DIR=".build/x86_64-apple-macosx/release"
 
-# Build each architecture slice separately and merge with lipo, rather than relying on
-# `swift build --arch a --arch b` producing a fat binary directly: that path requires the
-# Xcode-only "swiftbuild"/XCBuild backend, while building one arch at a time and merging
-# works with SwiftPM's native build system everywhere, including CI images without a full
-# Xcode install for this step.
+# Meth ships for Apple Silicon (arm64) only.
 echo "==> Building Meth (arm64, Release)..."
 swift build -c release --arch arm64
-
-echo "==> Building Meth (x86_64, Release)..."
-swift build -c release --arch x86_64
 
 echo "==> Creating application bundle at ${APP_BUNDLE}..."
 rm -rf "${DIST_DIR}"
@@ -41,9 +33,7 @@ mkdir -p "${MACOS_DIR}"
 mkdir -p "${RESOURCES_DIR}"
 
 for binary in Meth MethWatchdog; do
-  lipo -create -output "${MACOS_DIR}/${binary}" \
-    "${ARM64_DIR}/${binary}" \
-    "${X86_64_DIR}/${binary}"
+  cp "${ARM64_DIR}/${binary}" "${MACOS_DIR}/${binary}"
   chmod +x "${MACOS_DIR}/${binary}"
 done
 
@@ -131,10 +121,7 @@ for binary in Meth MethWatchdog; do
 
   archs="$(lipo -archs "${path}")"
   echo "    ${binary}: ${archs}"
-  case "${archs}" in
-    *arm64*x86_64* | *x86_64*arm64*) ;;
-    *) echo "${path} is not a Universal 2 (arm64 + x86_64) binary: ${archs}" >&2; exit 1 ;;
-  esac
+  [ "${archs}" = "arm64" ] || { echo "${path} is not an arm64-only binary: ${archs}" >&2; exit 1; }
 done
 
 [ -s "${RESOURCES_DIR}/AppIcon.icns" ] || { echo "Missing ${RESOURCES_DIR}/AppIcon.icns" >&2; exit 1; }

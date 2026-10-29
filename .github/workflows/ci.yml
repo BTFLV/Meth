@@ -122,7 +122,7 @@ jobs:
             exit 1
           fi
 
-  # Validates the packaging path contributors use: a Universal 2 (arm64 + x86_64) Meth.app,
+  # Validates the packaging path contributors use: an Apple Silicon (arm64) Meth.app,
   # ad-hoc signed and zipped, with the internal checks in scripts/build_app.sh. The
   # artifact is for testing only; official releases are built by release.yml.
   package:

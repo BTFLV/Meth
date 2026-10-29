@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Release builds are Apple Silicon (arm64) only; the Universal 2 build with an Intel
+  (x86_64) slice is no longer produced.
+
 ## [1.2.0] - 2026-10-19
 
 ### Added
